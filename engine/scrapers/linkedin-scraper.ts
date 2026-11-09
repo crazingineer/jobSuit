@@ -23,53 +23,95 @@ export class LinkedInScraper {
 
     console.log(`[LinkedIn Scraper] Searching for "${keywords}" in "${location}" (EasyApply: ${easyApply})...`);
 
+    let page: Page | null = null;
     try {
       const context = await browserManager.getContext({ headless: true });
-      const page = await context.newPage();
+      page = await context.newPage();
 
       // Encode URL parameters
       const f_AL = easyApply ? '&f_AL=true' : '';
       const searchUrl = `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(keywords)}&location=${encodeURIComponent(location)}${f_AL}&sortBy=DD`;
 
-      await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
+      await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
       await browserManager.humanDelay(2500, 4500);
 
       // Check for auth wall
-      if (page.url().includes('login') || page.url().includes('authwall')) {
-        console.warn('[LinkedIn Scraper] LinkedIn auth wall encountered. Session not logged in.');
+      if (page.url().includes('login') || page.url().includes('authwall') || page.url().includes('checkpoint')) {
         await page.close();
-        if (options.mockIfUnavailable) {
-          return this.getSimulatedJobs(keywords, location);
-        }
-        return [];
+        throw new Error('LinkedIn authentication wall encountered. Please launch Chrome CDP (Port 9222) from Settings and ensure your LinkedIn account is logged in.');
       }
 
       const scrapedJobs: JobListing[] = [];
       const jobCards = await page.$$('.jobs-search-results__list-item, .job-card-container');
 
+      if (jobCards.length === 0) {
+        console.log(`[LinkedIn Scraper] No job cards found on page. Current URL: ${page.url()}`);
+      }
+
       for (let i = 0; i < Math.min(jobCards.length, limit); i++) {
         const card = jobCards[i];
+
+        // 1. Extract Real Job ID from card attributes or anchor href
+        let realJobId = '';
+        const occludableId = await card.getAttribute('data-occludable-job-id');
+        const entityUrn = await card.getAttribute('data-job-id');
+        if (occludableId && occludableId.trim()) {
+          realJobId = occludableId.trim();
+        } else if (entityUrn && entityUrn.trim()) {
+          realJobId = entityUrn.trim();
+        } else {
+          const linkEl = await card.$('a.job-card-container__link, a.job-card-list__title, a[href*="/jobs/view/"]');
+          const href = linkEl ? await linkEl.getAttribute('href') : null;
+          const match = href ? href.match(/view\/([0-9]+)/) : null;
+          if (match) {
+            realJobId = match[1];
+          } else {
+            realJobId = `li-${Date.now()}-${i}`;
+          }
+        }
+
         await card.click();
         await browserManager.humanDelay(1500, 2500);
 
-        const titleEl = await page.$('.job-details-jobs-unified-top-card__job-title, .jobs-unified-top-card__job-title');
-        const companyEl = await page.$('.job-details-jobs-unified-top-card__company-name, .jobs-unified-top-card__company-name');
-        const locationEl = await page.$('.job-details-jobs-unified-top-card__bullet, .jobs-unified-top-card__bullet');
-        const jdEl = await page.$('#job-details, .jobs-description__content');
+        const titleEl = await page.$('.job-details-jobs-unified-top-card__job-title, .jobs-unified-top-card__job-title, h1.t-24');
+        const companyEl = await page.$('.job-details-jobs-unified-top-card__company-name, .jobs-unified-top-card__company-name, .job-details-jobs-unified-top-card__primary-description a');
+        const locationEl = await page.$('.job-details-jobs-unified-top-card__bullet, .jobs-unified-top-card__bullet, .job-details-jobs-unified-top-card__workplace-type');
+        const jdEl = await page.$('#job-details, .jobs-description__content, .jobs-box__html-content');
+
+        // Extract Real Advertised Comp if present
+        let advertisedComp: string | undefined = undefined;
+        const compEl = await page.$('.job-details-jobs-unified-top-card__job-insight:has-text("$"), .job-details-jobs-unified-top-card__job-insight:has-text("₹"), .salary-compensation, .compensation__salary');
+        if (compEl) {
+          advertisedComp = (await compEl.innerText()).trim();
+        }
+
+        // Check if actually Easy Apply
+        const applyBtn = await page.$('.jobs-apply-button--top-card, .jobs-apply-button, button[aria-label*="Easy Apply"]');
+        let isRealEasyApply = false;
+        if (applyBtn) {
+          const btnText = (await applyBtn.innerText()).toLowerCase();
+          const btnAria = (await applyBtn.getAttribute('aria-label'))?.toLowerCase() || '';
+          isRealEasyApply = btnText.includes('easy apply') || btnAria.includes('easy apply');
+        }
 
         if (titleEl && companyEl) {
           const title = (await titleEl.innerText()).trim();
           const company = (await companyEl.innerText()).trim();
           const loc = locationEl ? (await locationEl.innerText()).trim() : location;
-          const rawJd = jdEl ? (await jdEl.innerText()).trim() : 'Full description on LinkedIn';
-          const jobId = `li-${Date.now()}-${i}`;
+          const rawJd = jdEl ? (await jdEl.innerText()).trim() : '';
           const companySlug = company.toLowerCase().replace(/[^a-z0-9]/g, '-');
 
+          // Extract job URL from page or parameter
+          let jobUrl = page.url();
+          if (realJobId && !realJobId.startsWith('li-')) {
+            jobUrl = `https://www.linkedin.com/jobs/view/${realJobId}/`;
+          }
+
           scrapedJobs.push({
-            id: jobId,
+            id: `li-${realJobId}`,
             portal: 'linkedin',
-            portalJobId: `li-${i + 100}`,
-            url: page.url(),
+            portalJobId: realJobId,
+            url: jobUrl,
             title,
             company,
             companySlug,
@@ -78,11 +120,11 @@ export class LinkedInScraper {
             postedDate: new Date().toISOString().split('T')[0],
             capturedAt: new Date().toISOString(),
             rawJdText: rawJd,
-            companyType: 'Technology',
-            reportsTo: 'Engineering Manager',
-            advertisedComp: 'INR 40L - 60L',
+            companyType: 'Enterprise / Technology',
+            reportsTo: undefined,
+            advertisedComp,
             status: 'discovered',
-            easyApply: true
+            easyApply: isRealEasyApply
           });
         }
       }
@@ -90,59 +132,12 @@ export class LinkedInScraper {
       await page.close();
       return scrapedJobs;
     } catch (err: any) {
-      console.warn(`[LinkedIn Scraper] Scraper notice: ${err.message}. Using simulated stream.`);
-      if (options.mockIfUnavailable) {
-        return this.getSimulatedJobs(keywords, location);
+      if (page) {
+        try { await page.close(); } catch {}
       }
-      return [];
+      console.error(`[LinkedIn Scraper Error] ${err.message}`);
+      throw new Error(`LinkedIn Scrape Failed: ${err.message}`);
     }
-  }
-
-  /**
-   * High-fidelity simulated scraper stream for local and unattended offline operation
-   */
-  public getSimulatedJobs(keywords: string, location: string): JobListing[] {
-    const timestamp = Date.now();
-    return [
-      {
-        id: `job-li-${timestamp}-1`,
-        portal: 'linkedin',
-        portalJobId: `li-881920`,
-        url: 'https://www.linkedin.com/jobs/view/881920',
-        title: `Lead ${keywords} & Agentic Automation Architect`,
-        company: 'Cursor AI Partner Labs',
-        companySlug: 'cursor-ai-partner-labs',
-        location: `${location} / Remote`,
-        remoteType: 'Remote',
-        postedDate: new Date().toISOString().split('T')[0],
-        capturedAt: new Date().toISOString(),
-        rawJdText: 'We are seeking a Lead Automation Architect to build agentic coding workflows, Playwright headless workers, and multi-model evaluation benchmarks...',
-        companyType: 'Growth-stage startup / VC-backed',
-        reportsTo: 'Head of Engineering',
-        advertisedComp: 'INR 50L - 70L + Equity',
-        status: 'discovered',
-        easyApply: true
-      },
-      {
-        id: `job-li-${timestamp}-2`,
-        portal: 'linkedin',
-        portalJobId: `li-881921`,
-        url: 'https://www.linkedin.com/jobs/view/881921',
-        title: `Staff ${keywords} (Distributed Systems)`,
-        company: 'Swiggy Genie Platform',
-        companySlug: 'swiggy-genie-platform',
-        location: 'Bengaluru, Karnataka',
-        remoteType: 'Hybrid',
-        postedDate: new Date().toISOString().split('T')[0],
-        capturedAt: new Date().toISOString(),
-        rawJdText: 'Looking for Staff Engineers to build autonomous merchant dispatch agents, low-latency Kafka event streams, and real-time decisioning pipelines...',
-        companyType: 'Mature Tech / Unicorn',
-        reportsTo: 'Director of Platform Engineering',
-        advertisedComp: 'INR 55L - 75L',
-        status: 'discovered',
-        easyApply: true
-      }
-    ];
   }
 }
 

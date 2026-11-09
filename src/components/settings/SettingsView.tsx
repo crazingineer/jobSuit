@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Settings, 
   Key, 
@@ -12,13 +12,14 @@ import {
   Cpu,
   Clock,
   Sparkles,
-  ExternalLink
+  ExternalLink,
+  Trash2
 } from 'lucide-react';
 import { clientApi } from '@/lib/api';
 
 export const SettingsView: React.FC = () => {
   const [llmProvider, setLlmProvider] = useState<'gemini' | 'anthropic' | 'openai' | 'ollama'>('gemini');
-  const [geminiKey, setGeminiKey] = useState('AIzaSyD-••••••••••••••••••••••••••');
+  const [geminiKey, setGeminiKey] = useState('');
   const [claudeKey, setClaudeKey] = useState('');
   const [openaiKey, setOpenaiKey] = useState('');
   const [ollamaHost, setOllamaHost] = useState('http://localhost:11434');
@@ -34,6 +35,8 @@ export const SettingsView: React.FC = () => {
   const [isTestingBrowser, setIsTestingBrowser] = useState(false);
   const [isLaunchingCdp, setIsLaunchingCdp] = useState(false);
   const [isArmingScheduler, setIsArmingScheduler] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   const [testResult, setTestResult] = useState<{ status: 'idle' | 'success' | 'error'; message: string }>({
     status: 'idle',
@@ -43,6 +46,32 @@ export const SettingsView: React.FC = () => {
   const [naukriTime, setNaukriTime] = useState('08:55');
   const [naukriJitter, setNaukriJitter] = useState(15);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Load live settings from SQLite on mount
+  useEffect(() => {
+    async function loadSettings() {
+      try {
+        const res = await clientApi.getSettings();
+        if (res && res.settings) {
+          const s = res.settings;
+          if (s.llm_provider) setLlmProvider(s.llm_provider);
+          if (s.llm_api_key_encrypted) {
+            if (s.llm_provider === 'gemini') setGeminiKey(s.llm_api_key_encrypted);
+            else if (s.llm_provider === 'anthropic') setClaudeKey(s.llm_api_key_encrypted);
+            else if (s.llm_provider === 'openai') setOpenaiKey(s.llm_api_key_encrypted);
+          }
+          if (s.chrome_user_data_dir) setChromeProfilePath(s.chrome_user_data_dir);
+          if (s.edge_user_data_dir) setEdgeProfilePath(s.edge_user_data_dir);
+          if (s.preferred_browser) setPreferredBrowser(s.preferred_browser);
+          if (s.naukri_refresh_time) setNaukriTime(s.naukri_refresh_time);
+          if (s.naukri_refresh_jitter_mins) setNaukriJitter(s.naukri_refresh_jitter_mins);
+        }
+      } catch (err) {
+        console.warn('Could not load settings from API', err);
+      }
+    }
+    loadSettings();
+  }, []);
 
   // Test Browser Status via client API
   const handleTestBrowser = async () => {
@@ -91,9 +120,45 @@ export const SettingsView: React.FC = () => {
     }
   };
 
-  const handleSave = () => {
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2000);
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const activeKey = llmProvider === 'gemini' ? geminiKey : llmProvider === 'anthropic' ? claudeKey : openaiKey;
+      await clientApi.saveSettings({
+        llmProvider,
+        llmApiKey: activeKey,
+        chromeProfilePath,
+        edgeProfilePath,
+        preferredBrowser,
+        naukriTime,
+        naukriJitter
+      });
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
+    } catch (e: any) {
+      alert('Error saving settings to SQLite: ' + e.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleResetMockData = async () => {
+    if (!window.confirm('Are you sure you want to wipe all scraped jobs and evaluations? Your Master Vault and Rules will NOT be touched.')) {
+      return;
+    }
+    setIsResetting(true);
+    try {
+      const res = await clientApi.resetMockData();
+      if (res.success) {
+        alert(res.message || 'Mock jobs, evaluations, and tailored documents wiped cleanly.');
+      } else {
+        alert('Failed to reset: ' + res.error);
+      }
+    } catch (e: any) {
+      alert('Error resetting mock data: ' + e.message);
+    } finally {
+      setIsResetting(false);
+    }
   };
 
   return (
@@ -344,7 +409,7 @@ export const SettingsView: React.FC = () => {
             <input
               type="text"
               readOnly
-              value="data/master_cv/Arjun_Sharma_Master.pdf"
+              value="data/master_cv/Master_Resume.pdf"
               className="w-full px-3 py-1.5 rounded-lg bg-white/[0.02] border border-white/[0.06] text-zinc-400 outline-none cursor-default"
             />
           </div>
@@ -362,6 +427,36 @@ export const SettingsView: React.FC = () => {
           >
             <Clock className="w-3.5 h-3.5" />
             <span>{isArmingScheduler ? 'Registering Task...' : 'Arm Windows Task Scheduler'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Danger Zone: Reset / Clear Mock Data */}
+      <div className="p-5 rounded-xl glass-panel border border-rose-500/20 bg-rose-950/10 space-y-4">
+        <div className="flex items-center justify-between pb-2 border-b border-rose-500/20">
+          <h3 className="text-sm font-semibold text-rose-300 flex items-center gap-2">
+            <Trash2 className="w-4 h-4 text-rose-400" />
+            Reset & Clear Mock Data
+          </h3>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
+            Database Maintenance
+          </span>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <p className="text-xs text-zinc-400 leading-relaxed">
+            Wipes all discovered jobs, evaluations, application runs, and company-specific tailored documents from SQLite.
+            <br />
+            <strong className="text-zinc-200">Preserved:</strong> Your Master Fact Vault, Master CV JSON, Automation Rules, and API Settings.
+          </p>
+
+          <button
+            onClick={handleResetMockData}
+            disabled={isResetting}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs shadow-lg shadow-rose-600/30 transition-all shrink-0"
+          >
+            <Trash2 className={`w-3.5 h-3.5 ${isResetting ? 'animate-spin' : ''}`} />
+            <span>{isResetting ? 'Clearing Data...' : 'Reset / Clear Mock Data'}</span>
           </button>
         </div>
       </div>

@@ -52,8 +52,13 @@ export const MasterVaultStudio: React.FC = () => {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await clientApi.saveVault(vault, cv);
+      const res = await clientApi.saveVault(vault, cv);
+      setPdfTimestamp(Date.now());
       setSaveSuccess(true);
+      if (res?.compileResult?.durationMs) {
+        setCompileSuccess(`Master Resume PDF auto-synced in ${res.compileResult.durationMs}ms!`);
+        setTimeout(() => setCompileSuccess(null), 3500);
+      }
       setTimeout(() => setSaveSuccess(false), 2500);
     } catch (e: any) {
       alert('Error saving to SQLite: ' + e.message);

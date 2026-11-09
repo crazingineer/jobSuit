@@ -163,7 +163,7 @@ export class CareerOpsEvaluator {
   }
 
   /**
-   * Calls LLM provider or uses deterministic heuristic evaluator
+   * Calls LLM provider with CAREER_OPS_SYSTEM_PROMPT and buildEvaluationPrompt
    */
   private async executeEvaluation(
     job: any,
@@ -171,214 +171,294 @@ export class CareerOpsEvaluator {
     vault: PersonalVault,
     options: EvaluatorOptions
   ): Promise<EvaluationReport> {
-    const rawText = job.raw_jd_text.toLowerCase();
+    // 1. Resolve Provider, Model, and API Key
+    const settingsRow = db.prepare('SELECT * FROM system_settings WHERE id = 1').get() as any;
+    const provider = options.provider || settingsRow?.llm_provider || (
+      process.env.GEMINI_API_KEY ? 'gemini' :
+      process.env.ANTHROPIC_API_KEY ? 'anthropic' :
+      process.env.OPENAI_API_KEY ? 'openai' : 'gemini'
+    );
+    const model = options.model || settingsRow?.llm_model;
+    const apiKey = options.apiKey || settingsRow?.llm_api_key_encrypted || (
+      provider === 'gemini' ? process.env.GEMINI_API_KEY :
+      provider === 'anthropic' ? process.env.ANTHROPIC_API_KEY :
+      provider === 'openai' ? process.env.OPENAI_API_KEY : ''
+    );
 
-    // Archetype detection
-    let detectedArchetype = 'AI Platform / LLMOps Engineer';
-    if (rawText.includes('agent') || rawText.includes('playwright') || rawText.includes('workflow') || rawText.includes('automation')) {
-      detectedArchetype = 'Agentic Workflows / Automation';
-    } else if (rawText.includes('product manager') || rawText.includes('prd')) {
-      detectedArchetype = 'Technical AI Product Manager';
-    } else if (rawText.includes('solutions architect') || rawText.includes('enterprise')) {
-      detectedArchetype = 'AI Solutions Architect';
-    } else if (rawText.includes('forward deployed') || rawText.includes('fde')) {
-      detectedArchetype = 'AI Forward Deployed Engineer';
+    if (provider !== 'ollama' && (!apiKey || apiKey.trim() === '')) {
+      throw new Error(`LLM API key for ${provider.toUpperCase()} not configured. Please set your API key in Settings -> BYOK (or set ${provider.toUpperCase()}_API_KEY in .env).`);
     }
 
-    // Work authorization detection
-    let workAuthTier: any = 'Not needed';
-    if (rawText.includes('sponsorship available') || rawText.includes('visa sponsorship provided')) {
-      workAuthTier = 'Sponsors';
-    } else if (rawText.includes('no sponsorship') || rawText.includes('us citizen only') || rawText.includes('must be authorized without sponsorship')) {
-      workAuthTier = job.location.includes('India') ? 'Not needed' : 'No sponsorship';
-    }
+    console.log(`[career-ops] Invoking ${provider.toUpperCase()} (${model || 'default'}) for evaluation...`);
+    const promptText = buildEvaluationPrompt(
+      job.raw_jd_text,
+      JSON.stringify(masterCv, null, 2),
+      JSON.stringify(vault, null, 2)
+    );
 
-    // Block B Requirements Analysis
-    const reqs: any[] = [
-      {
-        requirement: 'Multi-agent orchestration with tool calling & error recovery',
-        importance: 'critical',
-        evidence: 'stated',
-        match: 'strong',
-        jdSignal: 'Hands-on experience building multi-agent systems with tool-calling capabilities.',
-        gap: null,
-        mitigation: null
-      },
-      {
-        requirement: 'Playwright / Headless browser automation via CDP',
-        importance: 'high',
-        evidence: 'stated',
-        match: 'strong',
-        jdSignal: 'Expertise controlling browser sessions via Playwright CDP with stealth evasion.',
-        gap: null,
-        mitigation: null
-      },
-      {
-        requirement: 'High-throughput microservices and vector retrieval (<150ms)',
-        importance: 'high',
-        evidence: 'structural',
-        match: 'strong',
-        jdSignal: 'Low-latency retrieval and production event streaming experience.',
-        gap: null,
-        mitigation: null
-      },
-      {
-        requirement: 'Bare-metal Kubernetes GPU cluster management',
-        importance: 'meaningful',
-        evidence: 'structural',
-        match: 'partial',
-        jdSignal: 'Bonus: Experience managing bare-metal GPU clusters.',
-        gap: 'Candidate experience is in AWS ECS/EKS Fargate rather than bare-metal k8s',
-        mitigation: 'Emphasize containerized worker lifecycle management and cloud cost optimization.'
+    let rawJsonText = '';
+
+    if (provider === 'gemini') {
+      const geminiModel = model || 'gemini-1.5-flash';
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
+      const payload = {
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: promptText }]
+          }
+        ],
+        systemInstruction: {
+          parts: [{ text: CAREER_OPS_SYSTEM_PROMPT }]
+        },
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.1
+        }
+      };
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(`Gemini API error (${res.status}): ${errBody}`);
       }
-    ];
 
-    // Block G Signals
-    const isPayTransparent = job.advertised_comp ? true : false;
-    const isAgency = rawText.includes('our client') || job.company_type?.includes('Agency');
-    const legitimacyTier: any = isAgency ? 'Proceed with Caution' : 'High Confidence';
+      const data = await res.json();
+      rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    } else if (provider === 'anthropic') {
+      const anthropicModel = model || 'claude-3-5-sonnet-20241022';
+      const endpoint = 'https://api.anthropic.com/v1/messages';
+      const payload = {
+        model: anthropicModel,
+        max_tokens: 4096,
+        system: CAREER_OPS_SYSTEM_PROMPT,
+        messages: [
+          { role: 'user', content: `${promptText}\n\nRespond ONLY with a valid JSON object matching the requested schema.` }
+        ],
+        temperature: 0.1
+      };
 
-    // Global Score calculation
-    let cvMatch = 4.8;
-    let northStar = 4.7;
-    let compScore = 4.6;
-    let cultureScore = 4.7;
-    let redFlagsDeduction = 0.0;
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify(payload)
+      });
 
-    if (rawText.includes('generic consulting') || rawText.includes('legacy support')) {
-      cvMatch = 3.0;
-      northStar = 2.5;
-      compScore = 3.0;
-      cultureScore = 2.8;
-      redFlagsDeduction = 0.5;
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(`Anthropic API error (${res.status}): ${errBody}`);
+      }
+
+      const data = await res.json();
+      rawJsonText = data.content?.[0]?.text || '';
+    } else if (provider === 'openai') {
+      const openaiModel = model || 'gpt-4o';
+      const endpoint = 'https://api.openai.com/v1/chat/completions';
+      const payload = {
+        model: openaiModel,
+        messages: [
+          { role: 'system', content: CAREER_OPS_SYSTEM_PROMPT },
+          { role: 'user', content: promptText }
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.1
+      };
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(`OpenAI API error (${res.status}): ${errBody}`);
+      }
+
+      const data = await res.json();
+      rawJsonText = data.choices?.[0]?.message?.content || '';
+    } else if (provider === 'ollama') {
+      const host = settingsRow?.ollama_host || process.env.OLLAMA_HOST || 'http://localhost:11434';
+      const ollamaModel = model || 'llama3';
+      const endpoint = `${host.replace(/\/+$/, '')}/api/chat`;
+      const payload = {
+        model: ollamaModel,
+        messages: [
+          { role: 'system', content: CAREER_OPS_SYSTEM_PROMPT },
+          { role: 'user', content: promptText }
+        ],
+        format: 'json',
+        stream: false
+      };
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(`Ollama error (${res.status}) at ${host}: ${errBody}`);
+      }
+
+      const data = await res.json();
+      rawJsonText = data.message?.content || '';
+    } else {
+      throw new Error(`Unsupported LLM provider: ${provider}`);
     }
 
-    const calculatedScore = Math.max(1.0, Math.min(5.0, Number(((cvMatch + northStar + compScore + cultureScore) / 4 - redFlagsDeduction).toFixed(1))));
-    const decision: any = calculatedScore >= 4.0 && workAuthTier !== 'No sponsorship' ? 'Apply' : 'Skip';
+    if (!rawJsonText || rawJsonText.trim() === '') {
+      throw new Error(`LLM provider ${provider} returned empty evaluation content.`);
+    }
+
+    // Clean JSON (strip potential markdown code fences)
+    let cleaned = rawJsonText.trim();
+    if (cleaned.startsWith('```')) {
+      cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+    }
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (parseErr: any) {
+      throw new Error(`Failed to parse LLM evaluation JSON: ${parseErr.message}\nRaw response:\n${cleaned.slice(0, 500)}`);
+    }
+
+    // Extract fields safely
+    const score = typeof parsed.score === 'number' ? Math.max(1.0, Math.min(5.0, Number(parsed.score.toFixed(1)))) : 3.5;
+    const finalDecision = parsed.final_decision || (score >= 4.0 ? 'Apply' : score >= 3.5 ? 'Consider' : 'Skip');
+    const archetype = parsed.archetype || 'AI Platform / LLMOps Engineer';
+    const legitimacyTier = parsed.legitimacy_tier || 'High Confidence';
+    const workAuthTier = parsed.work_auth_tier || 'Not needed';
+
+    const dims = parsed.dimension_scores || {};
+    const cvMatchScore = typeof dims.cv_match === 'number' ? dims.cv_match : score;
+    const northStarScore = typeof dims.north_star === 'number' ? dims.north_star : score;
+    const compScore = typeof dims.compensation === 'number' ? dims.compensation : (typeof parsed.comp_score === 'number' ? parsed.comp_score : 4.0);
+    const cultureScore = typeof dims.culture === 'number' ? dims.culture : 4.0;
+    const redFlagsDeduction = typeof dims.red_flags_deduction === 'number' ? dims.red_flags_deduction : 0.0;
 
     const fullMarkdown = `# Evaluation: ${job.company} — ${job.title}
 
 **Date:** ${new Date().toISOString().split('T')[0]}
-**Archetype:** ${detectedArchetype}
-**Score:** ${calculatedScore}/5.0
-**Decision:** ${decision}
+**Archetype:** ${archetype}
+**Score:** ${score}/5.0
+**Decision:** ${finalDecision}
 **Legitimacy:** ${legitimacyTier}
-**Work Auth:** ${workAuthTier === 'Not needed' ? '➖ Not needed' : workAuthTier === 'Sponsors' ? '✅ Sponsors' : '⛔ No sponsorship'}
+**Work Auth:** ${workAuthTier}
 
-**${decision}.** Evaluated under career-ops deterministic rubrics. Alignment on agentic workflows and low-latency system design.`;
+### Verdict & Summary
+${parsed.block_a_summary?.tldr || `${finalDecision}. Evaluated under career-ops structured rubrics.`}
+`;
 
     const machineYaml = `company: "${job.company}"
 role: "${job.title}"
-score: ${calculatedScore}
+score: ${score}
 legitimacy_tier: "${legitimacyTier}"
-archetype: "${detectedArchetype}"
-final_decision: "${decision}"
-hard_stops: []
-soft_gaps:
-  - "Bare-metal Kubernetes GPU cluster management"
-top_strengths:
-  - "High-scale Playwright multi-agent experience"
-  - "Production RAG with sub-120ms latency"
-work_auth: "${workAuthTier.toLowerCase().replace(' ', '_')}"
+archetype: "${archetype}"
+final_decision: "${finalDecision}"
+hard_stops: ${JSON.stringify(parsed.hard_stops || [])}
+soft_gaps: ${JSON.stringify(parsed.soft_gaps || [])}
+top_strengths: ${JSON.stringify(parsed.top_strengths || [])}
+work_auth: "${workAuthTier.toLowerCase().replace(/\s+/g, '_')}"
 advertised_comp: "${job.advertised_comp || 'Unstated'}"`;
 
     return {
       id: `eval-${job.id}`,
       jobId: job.id,
-      score: calculatedScore,
-      finalDecision: decision,
-      archetype: detectedArchetype,
+      score,
+      finalDecision,
+      archetype,
       legitimacyTier,
       workAuthTier,
-      cvMatchScore: cvMatch,
-      northStarScore: northStar,
+      cvMatchScore,
+      northStarScore,
       compScore,
       cultureScore,
       redFlagsDeduction,
-      evidenceConfidence: 'High',
-      confidenceGaps: [],
-      hardStops: [],
-      softGaps: ['Bare-metal Kubernetes GPU cluster management'],
-      topStrengths: [
-        'High-scale Playwright multi-agent experience',
-        'Production RAG with sub-120ms latency',
-        'Clean modular TypeScript + Python systems architecture'
-      ],
-      blockASummary: {
-        archetype: detectedArchetype,
-        domain: 'Enterprise AI Automation & System Orchestration',
+      evidenceConfidence: parsed.evidence_confidence || 'High',
+      confidenceGaps: parsed.confidence_gaps || [],
+      hardStops: parsed.hard_stops || [],
+      softGaps: parsed.soft_gaps || [],
+      topStrengths: parsed.top_strengths || [],
+      blockASummary: parsed.block_a_summary || {
+        archetype,
+        domain: 'AI & Software Systems',
         seniority: 'Lead / Staff',
         workMode: job.remote_type || 'Remote',
-        teamSize: '8 - 14 engineers',
+        teamSize: 'Unstated',
         workAuth: `${workAuthTier} (${vault.location})`,
-        tldr: 'Direct ownership of agent runtime, Playwright execution, and tool-calling reliability.'
+        tldr: 'Direct evaluation completed via LLM.'
       },
-      blockBRequirements: reqs,
-      blockCStrategy: {
-        levelFit: 'Peer / Natural Lead',
-        positioning: 'Lead Automation Architect who bridges customer discovery, agentic design, and fault-tolerant production infrastructure.',
-        downlevelDefense: 'Demonstrate architecture ownership of 10M+ daily events and verified $180k annual cost savings at HyperFlow.'
+      blockBRequirements: (parsed.block_b_requirements || []).map((r: any) => ({
+        requirement: r.requirement || 'Requirement',
+        importance: r.importance || 'high',
+        evidence: r.evidence || 'stated',
+        match: r.match || 'strong',
+        jdSignal: r.jd_signal || r.jdSignal || null,
+        gap: r.gap || null,
+        mitigation: r.mitigation || null
+      })),
+      blockCStrategy: parsed.block_c_strategy || {
+        levelFit: 'Peer / Target Level',
+        positioning: 'Position as a grounded practitioner with direct system ownership.',
+        downlevelDefense: 'Demonstrate metrics-backed production deliverables from Master CV.'
       },
-      blockDComp: {
-        companyType: job.company_type || 'Growth-stage startup / VC-backed',
-        compReliability: 'High',
-        advertisedComp: job.advertised_comp || 'INR 45L - 60L',
-        guaranteedBase: 'INR 45L',
-        variable: 'Performance bonus & ESOPs',
-        marketPercentile: 'Top 10% in Indian AI hiring market'
+      blockDComp: parsed.block_d_comp || {
+        companyType: job.company_type || 'Unstated',
+        compReliability: 'Medium',
+        advertisedComp: job.advertised_comp || null,
+        guaranteedBase: null,
+        variable: null,
+        marketPercentile: 'Market rate'
       },
-      blockEPersonalization: [
-        {
-          id: 'b1',
-          section: 'HyperFlow Tech (Bullet 1)',
-          currentState: 'Architected multi-agent customer support automation platform...',
-          proposedChange: 'Architected enterprise multi-agent automation platform using Playwright CDP and Gemini 1.5 JSON schema validation, deflecting 42% of manual tier-1 tickets and saving $180k/year in operational overhead.',
-          why: 'Directly mirrors the JD critical requirement for tool-calling and browser automation'
-        }
-      ],
-      blockFInterview: {
-        starStories: [
-          {
-            id: 1,
-            requirement: 'Multi-agent orchestration & tool calling',
-            story: 'Customer Support Deflection Engine',
-            s: 'HyperFlow was spending $15k/mo on manual tier-1 support triage.',
-            t: 'Build an autonomous agent with human approval escalation.',
-            a: 'Implemented Playwright CDP tool caller with Gemini 1.5 JSON function calling and strict schema validation.',
-            r: 'Achieved 42% autonomous resolution rate with zero data leak incidents.',
-            reflection: 'Strict type validation on tool parameters prevented 98% of hallucinations.'
-          }
-        ],
-        caseStudy: 'Designing a self-healing browser worker that recovers gracefully from DOM mutations and rate limits.',
-        redFlagQa: [
-          {
-            q: 'Why specialize in agentic workflows over traditional full-stack software?',
-            a: 'Deterministic software and probabilistic LLMs are complementary; building resilient systems at that boundary offers the highest leverage.'
-          }
-        ]
+      blockEPersonalization: (parsed.block_e_personalization || []).map((e: any, idx: number) => ({
+        id: e.id || `e${idx + 1}`,
+        section: e.section || 'Work Experience',
+        currentState: e.current_state || e.currentState || '',
+        proposedChange: e.proposed_change || e.proposedChange || '',
+        why: e.why || 'Tailored to JD keywords'
+      })),
+      blockFInterview: parsed.block_f_interview || {
+        starStories: [],
+        caseStudy: 'Technical problem analysis for target role',
+        redFlagQa: []
       },
-      blockGLegitimacy: {
-        postingFreshness: 'Active (Posted within 24h)',
-        descriptionQuality: 'High specificity, explicit architectural scope',
-        repostSignals: 'First seen requisition',
-        aiBuzzwordMismatch: 'Consistent (Deep technical stack specified)',
-        payTransparency: isPayTransparent ? 'Compliant' : 'Unstated',
-        recruiterVerification: 'Hiring Manager verified'
+      blockGLegitimacy: parsed.block_g_legitimacy || {
+        postingFreshness: 'Active',
+        descriptionQuality: 'Specific requirements',
+        repostSignals: 'Standard',
+        aiBuzzwordMismatch: 'Low',
+        payTransparency: job.advertised_comp ? 'Disclosed' : 'Unstated',
+        recruiterVerification: 'Verified'
       },
-      blockHAnswers: calculatedScore >= 4.0 ? {
-        why_apply: `I have spent the last 3 years engineering deterministic multi-agent architectures that interact with web and software tooling. Having achieved 42% autonomous deflection in production at HyperFlow, this role at ${job.company} directly aligns with my passion for resilient automation.`,
-        expected_ctc: `${job.advertised_comp || 'INR 45L - 55L'} (negotiable based on equity component)`,
-        notice_period: `${vault.noticePeriodDays} days (buyout negotiable for immediate joining)`
-      } : undefined,
-      riskSummary: {
-        legitimacy: 'High Confidence',
-        classification: 'Clear (Full-time W2/Permanent employee)',
+      blockHAnswers: parsed.block_h_answers || (score >= 4.0 ? {
+        why_apply: `I am passionate about this role at ${job.company} as it directly leverages my verified experience in ${masterCv.title}.`,
+        expected_ctc: `${vault.expectedCtcLakhs} LPA (negotiable)`,
+        notice_period: `${vault.noticePeriodDays} days`
+      } : undefined),
+      riskSummary: parsed.risk_summary || {
+        legitimacy: legitimacyTier,
+        classification: 'Full-time / Permanent',
         culture: 'Pass',
         interview_redflags: 'None',
-        ai_infra: 'Consistent',
+        ai_infra: 'Aligned',
         fixed_term: 'Not detected'
       },
-      scoreEvidence: {
+      scoreEvidence: parsed.score_evidence || {
         cv_match: 'supported',
         north_star: 'supported',
         compensation: 'supported',

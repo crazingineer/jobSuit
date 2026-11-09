@@ -31,15 +31,36 @@
 
 ## 🚀 1-Click Launch (Desktop User Experience)
 
-No need to open PowerShell or cmd. Double-click either batch file:
+No need to mess with a command prompt. Double-click either batch file:
 
 ```text
 📁 jobSuit/
-├── 📄 Launch-jobSuite-AppWindow.bat   <-- (Recommended) Native borderless app window
+├── 📄 Launch-jobSuite-AppWindow.bat   <-- (Recommended) Native borderless app window + auto-supervisor
 └── 📄 Launch-jobSuite.bat             <-- Opens in your default web browser
 ```
 
-Both launchers automatically initialize the background SQLite Express engine on port `4173` and launch the frontend interface on port `5173`.
+### Automatic Process Lifecycle Supervisor
+`Launch-jobSuite-AppWindow.bat` acts as a zero-orphan desktop supervisor:
+1. Checks for and terminates any stale background processes on ports `4173` and `5173`.
+2. Verifies whether Chrome DevTools Protocol (CDP port `9222`) is running; if not, automatically starts Chrome with remote debugging.
+3. Initializes the Express automation engine on port `4173` and Vite React UI on port `5173`.
+4. Launches a dedicated Windows Native App window via Microsoft Edge App Mode (`--app=http://localhost:5173`).
+5. **Zero Orphaned Processes**: When you close the app window, the supervisor script automatically cleans up and terminates all background engine and UI processes.
+
+---
+
+## 🔑 Quick Start Configuration (BYOK & Master Vault)
+
+1. **Configure Your LLM Provider**:
+   - Open **Settings** in the left sidebar.
+   - Select your preferred LLM provider (**Google Gemini**, **Anthropic Claude**, **OpenAI**, or **Local Ollama**).
+   - Enter your API Key (e.g. `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY`) and click **Save Settings**.
+   - Alternatively, copy `.env.example` to `.env` and paste your API keys.
+2. **Populate Your Master Vault**:
+   - Navigate to **Master Vault** to customize your personal details, CTC (Current / Expected LPA), Notice Period, and Work Experience.
+   - Whenever you save your Master Vault, jobSuite **automatically and synchronously recompiles** `data/master_cv/Master_Resume.pdf` so the Naukri 9:00 AM Refresher always uses your freshest resume.
+3. **Reset / Clear Mock Data**:
+   - If you ever want to wipe scraped listings, evaluations, and test runs while preserving your Master Vault, go to **Settings** → **Danger Zone: Reset & Clear Mock Data** and click **Wipe Mock Data**. All personal settings and your Master Vault are strictly preserved.
 
 ---
 

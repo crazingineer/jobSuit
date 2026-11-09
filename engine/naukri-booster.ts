@@ -22,19 +22,22 @@ export class NaukriBooster {
     if (designatedPdfPath && fs.existsSync(designatedPdfPath)) {
       this.resumePdfPath = designatedPdfPath;
     } else {
-      // Find latest tailored resume in data/cv_tailored or fallback
-      const tailoredDir = path.resolve(process.cwd(), 'data', 'cv_tailored');
-      const files = fs.existsSync(tailoredDir) ? fs.readdirSync(tailoredDir).filter(f => f.endsWith('.pdf') && !f.includes('CoverLetter')) : [];
-      if (files.length > 0) {
-        this.resumePdfPath = path.join(tailoredDir, files[0]);
+      // Always prioritize Master Resume PDF
+      const masterPath = path.resolve(process.cwd(), 'data', 'master_cv', 'Master_Resume.pdf');
+      const tailoredMaster = path.resolve(process.cwd(), 'data', 'cv_tailored', 'Master_Resume.pdf');
+
+      if (fs.existsSync(masterPath)) {
+        this.resumePdfPath = masterPath;
+      } else if (fs.existsSync(tailoredMaster)) {
+        this.resumePdfPath = tailoredMaster;
       } else {
-        this.resumePdfPath = path.resolve(process.cwd(), 'data', 'master_cv', 'Master_Resume.pdf');
+        this.resumePdfPath = masterPath;
       }
     }
   }
 
   /**
-   * Computes the next scheduled run with random jitter (+/- 15 minutes)
+   * Computes the next scheduled run with random jitter (+/- 15 minutes) in IST timezone
    */
   public getNextScheduledTime(targetTime: string = '08:55', jitterMinutes: number = 15): string {
     const [hours, minutes] = targetTime.split(':').map(Number);
@@ -47,7 +50,17 @@ export class NaukriBooster {
     const randomJitter = (Math.random() * (jitterMinutes * 2) - jitterMinutes) * 60 * 1000;
     const jitteredTime = new Date(nextRun.getTime() + randomJitter);
 
-    return jitteredTime.toISOString().replace('T', ' ').substring(0, 19);
+    // Return in local Indian Standard Time (IST)
+    return jitteredTime.toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    }) + ' IST';
   }
 
   /**

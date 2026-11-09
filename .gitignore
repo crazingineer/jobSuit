@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -26,13 +31,17 @@ dist-ssr
 # Reference repository
 _career_ops_ref
 
+# Personal Data & Database files (Privacy Protection)
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+data/cv_tailored/*.pdf
+data/master_cv/*.pdf
+
 # Browser Profile (Sensitive user session and auth cookies)
 data/browser_profile/
 data/browser_profile/*
-
-# SQLite Temporary WAL / Shared Memory
-*.db-wal
-*.db-shm
 
 # Rust / Tauri target
 src-tauri/target/

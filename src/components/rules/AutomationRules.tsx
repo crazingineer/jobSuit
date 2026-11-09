@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Sliders, 
   ShieldCheck, 
@@ -12,6 +12,7 @@ import {
   Layers,
   Sparkles
 } from 'lucide-react';
+import { clientApi } from '@/lib/api';
 
 export const AutomationRules: React.FC = () => {
   const [linkedinLimit, setLinkedinLimit] = useState(25);
@@ -47,11 +48,62 @@ export const AutomationRules: React.FC = () => {
 
   const [newCompany, setNewCompany] = useState('');
   const [newKeyword, setNewKeyword] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  const handleSave = () => {
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2000);
+  // Load rules on mount
+  useEffect(() => {
+    async function loadRules() {
+      try {
+        const res = await clientApi.getRules();
+        if (res && res.rules) {
+          const r = res.rules;
+          if (r.linkedin_daily_limit !== undefined) setLinkedinLimit(r.linkedin_daily_limit);
+          if (r.naukri_daily_limit !== undefined) setNaukriLimit(r.naukri_daily_limit);
+          if (r.delay_min_sec !== undefined) setDelayMin(r.delay_min_sec);
+          if (r.delay_max_sec !== undefined) setDelayMax(r.delay_max_sec);
+          if (r.min_score_threshold !== undefined) setScoreThreshold(r.min_score_threshold);
+          if (r.blacklistCompanies && Array.isArray(r.blacklistCompanies) && r.blacklistCompanies.length > 0) {
+            setBlacklistedCompanies(r.blacklistCompanies);
+          }
+          if (r.blacklistKeywords && Array.isArray(r.blacklistKeywords) && r.blacklistKeywords.length > 0) {
+            setBlacklistedKeywords(r.blacklistKeywords);
+          }
+          setToggles(prev => ({
+            ...prev,
+            linkedin: r.auto_pilot_linkedin ? 'auto_pilot' : 'co_pilot',
+            naukri: r.auto_pilot_naukri ? 'auto_pilot' : 'co_pilot',
+            workday: r.auto_pilot_workday ? 'auto_pilot' : 'co_pilot',
+            greenhouse: r.auto_pilot_greenhouse ? 'auto_pilot' : 'co_pilot',
+          }));
+        }
+      } catch (err) {
+        console.warn('Could not fetch rules from API', err);
+      }
+    }
+    loadRules();
+  }, []);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await clientApi.saveRules({
+        linkedinLimit,
+        naukriLimit,
+        delayMin,
+        delayMax,
+        scoreThreshold,
+        blacklistedCompanies,
+        blacklistedKeywords,
+        toggles
+      });
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
+    } catch (e: any) {
+      alert('Error saving rules to SQLite: ' + e.message);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const addCompany = () => {

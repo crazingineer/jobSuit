@@ -1,12 +1,17 @@
 @echo off
 title jobSuite Desktop App
+cd /d "%~dp0"
+
 echo ===================================================================
-echo   jobSuite - Windows Native AI Job Automation & Career-Ops
-echo   Running Local Engine (Port 4173) + React Desktop UI (Port 5173)
+echo   jobSuite — Windows Native AI Job Automation & Career-Ops
 echo ===================================================================
 
-cd /d "%~dp0"
-start "jobSuite-Engine" /min cmd /c "npm run dev:engine"
-timeout /t 2 /nobreak >nul
+echo [1/3] Checking ports 4173 and 5173 for stale processes...
+powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 4173,5173 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"
+
+echo [2/3] Starting Chrome CDP session if not running...
+powershell -NoProfile -Command "try { $c = Get-NetTCPConnection -LocalPort 9222 -State Listen -ErrorAction Stop } catch { & '.\scripts\launch-chrome-cdp.ps1' }"
+
+echo [3/3] Launching Engine and UI (Press Ctrl+C to stop both)...
 start "" "http://localhost:5173"
-npm run dev:ui
+npm run dev

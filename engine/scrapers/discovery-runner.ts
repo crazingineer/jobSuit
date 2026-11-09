@@ -13,13 +13,15 @@ export interface DiscoveryOptions {
 
 export class DiscoveryOrchestrator {
   /**
-   * Runs end-to-end multi-portal discovery and triggers career-ops evaluation
+   * Runs end-to-end multi-portal discovery and triggers career-ops evaluation.
+   * Real scraping only - zero silent mock fallbacks.
    */
   public async runDiscovery(options: DiscoveryOptions = {}): Promise<{
     discoveredCount: number;
     evaluatedCount: number;
     qualifiedCount: number;
     jobs: JobListing[];
+    errors?: string[];
   }> {
     initDatabase();
     const keywords = options.keywords || 'AI Engineer';
@@ -33,23 +35,43 @@ export class DiscoveryOrchestrator {
 
     // 1. Fetch Blacklist Rules
     const rulesRow = db.prepare('SELECT * FROM automation_rules WHERE id = 1').get() as any;
-    const blacklistCompanies: string[] = rulesRow ? JSON.parse(rulesRow.blacklist_companies) : [];
-    const blacklistKeywords: string[] = rulesRow ? JSON.parse(rulesRow.blacklist_keywords) : [];
+    const blacklistCompanies: string[] = rulesRow ? JSON.parse(rulesRow.blacklist_companies || '[]') : [];
+    const blacklistKeywords: string[] = rulesRow ? JSON.parse(rulesRow.blacklist_keywords || '[]') : [];
 
-    // 2. Run Scrapers
+    // 2. Run Scrapers with Real Error Surfacing
     const rawJobs: JobListing[] = [];
+    const scraperErrors: string[] = [];
 
     // LinkedIn
-    const liJobs = await linkedInScraper.scrapeJobs({ keywords, location, limit: 3, mockIfUnavailable: true });
-    rawJobs.push(...liJobs);
+    try {
+      const liJobs = await linkedInScraper.scrapeJobs({ keywords, location, limit: 3, mockIfUnavailable: false });
+      rawJobs.push(...liJobs);
+    } catch (err: any) {
+      console.warn(`[Discovery] LinkedIn notice: ${err.message}`);
+      scraperErrors.push(`LinkedIn: ${err.message}`);
+    }
 
-    // Naukri
-    const nkJobs = await naukriScraper.scrapeJobs({ keywords, location: 'Bengaluru', limit: 2, mockIfUnavailable: true });
-    rawJobs.push(...nkJobs);
+    // Naukri (Dynamic location passed)
+    try {
+      const nkJobs = await naukriScraper.scrapeJobs({ keywords, location, limit: 3, mockIfUnavailable: false });
+      rawJobs.push(...nkJobs);
+    } catch (err: any) {
+      console.warn(`[Discovery] Naukri notice: ${err.message}`);
+      scraperErrors.push(`Naukri: ${err.message}`);
+    }
 
     // Direct ATS Boards
-    const ghJobs = await atsScraper.scrapeBoard({ portal: 'greenhouse', company: 'LangChain AI', boardUrl: 'https://boards.greenhouse.io/langchain' });
-    rawJobs.push(...ghJobs);
+    try {
+      const ghJobs = await atsScraper.scrapeBoard({ portal: 'greenhouse', company: 'LangChain', boardUrl: 'https://boards.greenhouse.io/langchain' });
+      rawJobs.push(...ghJobs);
+    } catch (err: any) {
+      console.warn(`[Discovery] ATS notice: ${err.message}`);
+      scraperErrors.push(`ATS: ${err.message}`);
+    }
+
+    if (rawJobs.length === 0 && scraperErrors.length > 0) {
+      throw new Error(`Discovery failed across sources:\n- ${scraperErrors.join('\n- ')}`);
+    }
 
     console.log(`[Discovery] Scraped ${rawJobs.length} candidate postings. Applying safety gates & deduplication...`);
 
@@ -103,40 +125,36 @@ export class DiscoveryOrchestrator {
       newJobs.push(job);
     }
 
-    console.log(`\n[Database] Inserted ${newJobs.length} new unique jobs into SQLite.`);
+    console.log(`[Discovery] Filtered & saved ${newJobs.length} brand new unique jobs in SQLite.\n`);
 
-    // 4. Run career-ops A-H Evaluator
+    // 4. Optionally Run career-ops A-H Evaluator Immediately
     let evaluatedCount = 0;
     let qualifiedCount = 0;
 
     if (evaluateImmediately && newJobs.length > 0) {
-      console.log(`\n--- Initiating career-ops Evaluation on Discovered Jobs ---`);
+      console.log(`[Evaluator] Running career-ops Blocks A-H evaluation on ${newJobs.length} new jobs...`);
       for (const job of newJobs) {
         try {
-          const report = await careerOpsEvaluator.evaluateJob(job.id);
+          const evalReport = await careerOpsEvaluator.evaluateJob(job.id);
           evaluatedCount++;
-          console.log(`★ Evaluated "${job.title}" @ ${job.company} -> Score: ${report.score}/5.0 [${report.finalDecision}]`);
-          if (report.score >= 4.0 && report.finalDecision === 'Apply') {
+          if (evalReport.score >= 4.0) {
             qualifiedCount++;
+            console.log(`  ⭐ Qualified: ${job.title} (Score: ${evalReport.score})`);
+          } else {
+            console.log(`  ⏩ Skipped: ${job.title} (Score: ${evalReport.score})`);
           }
-        } catch (evalErr: any) {
-          console.error(`Failed to evaluate job ${job.id}:`, evalErr.message);
+        } catch (err: any) {
+          console.error(`  ❌ Evaluation failed for ${job.title}: ${err.message}`);
         }
       }
     }
-
-    console.log(`\n======================================================`);
-    console.log(`🎯 [Discovery Summary]`);
-    console.log(`Discovered:  ${newJobs.length} new listings`);
-    console.log(`Evaluated:   ${evaluatedCount} reports generated (Blocks A-H)`);
-    console.log(`Qualified:   ${qualifiedCount} jobs scored >= 4.0 (Tailored & Queued)`);
-    console.log(`======================================================\n`);
 
     return {
       discoveredCount: newJobs.length,
       evaluatedCount,
       qualifiedCount,
-      jobs: newJobs
+      jobs: newJobs,
+      errors: scraperErrors.length > 0 ? scraperErrors : undefined
     };
   }
 }

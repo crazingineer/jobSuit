@@ -134,7 +134,7 @@ app.get('/api/vault', (req, res) => {
   }
 });
 
-app.post('/api/vault', (req, res) => {
+app.post('/api/vault', async (req, res) => {
   try {
     const { vault, masterCv } = req.body;
     if (vault) {
@@ -173,7 +173,18 @@ app.post('/api/vault', (req, res) => {
         JSON.stringify(masterCv.projects)
       );
     }
-    res.json({ success: true, message: 'Vault updated successfully' });
+
+    // Auto-recompile Master Resume PDF synchronously on every save
+    let compileResult = null;
+    try {
+      const compiler = new ResumeCompiler();
+      compileResult = await compiler.compileMasterCv(vault, masterCv);
+      console.log(`[UI Server] Master Resume PDF auto-recompiled on vault save in ${compileResult.durationMs}ms`);
+    } catch (compileErr: any) {
+      console.warn(`[UI Server] Notice: Could not recompile PDF during save: ${compileErr.message}`);
+    }
+
+    res.json({ success: true, message: 'Vault updated & Master Resume PDF auto-compiled successfully', compileResult });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -452,6 +463,38 @@ app.post('/api/settings', (req, res) => {
     );
 
     res.json({ success: true, message: 'System settings saved to SQLite' });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 13. Reset / Clear Mock Data API
+app.post('/api/system/reset-mock-data', (req, res) => {
+  try {
+    console.log('[UI Server] Resetting mock data: wiping jobs, evaluations, runs, and booster logs...');
+    db.prepare('DELETE FROM application_runs').run();
+    db.prepare('DELETE FROM tailored_documents WHERE doc_type != "master"').run();
+    db.prepare('DELETE FROM evaluations').run();
+    db.prepare('DELETE FROM job_listings').run();
+    db.prepare('DELETE FROM naukri_booster_logs').run();
+
+    // Remove generated company-specific PDFs, keep Master_Resume.pdf
+    const tailoredDir = path.resolve(process.cwd(), 'data', 'cv_tailored');
+    if (fs.existsSync(tailoredDir)) {
+      const files = fs.readdirSync(tailoredDir);
+      for (const file of files) {
+        if (file.endsWith('.pdf') && !file.includes('Master_Resume')) {
+          try {
+            fs.unlinkSync(path.join(tailoredDir, file));
+          } catch {}
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Mock jobs, evaluations, and tailored documents wiped. Master Vault & Automation Rules preserved.'
+    });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

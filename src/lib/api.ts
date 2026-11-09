@@ -194,6 +194,18 @@ export const clientApi = {
     } catch (e: any) {
       return { success: false, error: e.message };
     }
+  },
+
+  // 16. Reset Mock Data
+  async resetMockData() {
+    try {
+      const res = await fetch(`${API_BASE}/system/reset-mock-data`, {
+        method: 'POST'
+      });
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
   }
 };
 

@@ -171,7 +171,7 @@ export const EvaluationDrawer: React.FC<EvaluationDrawerProps> = ({ job, onClose
         setOpState(prev => ({
           ...prev,
           currentStepIndex: 2,
-          logs: [...prev.logs, '[Vault] Current CTC: 26 LPA, Expected: 38 LPA', '[Vault] Notice Period: 60 days (buyout negotiable)']
+          logs: [...prev.logs, '[Vault] Injected candidate notice period, CTC expectations & EEO disclosures', '[Form Engine] Verified form field mappings in SQLite cache']
         }));
       }, 2000);
 
@@ -179,11 +179,11 @@ export const EvaluationDrawer: React.FC<EvaluationDrawerProps> = ({ job, onClose
         setOpState(prev => ({
           ...prev,
           currentStepIndex: 3,
-          logs: [...prev.logs, '[Resume] Uploaded tailored PDF: Arjun_Sharma_AnthropicPartner_LeadAI.pdf']
+          logs: [...prev.logs, `[Resume] Attached tailored ATS resume: ${getPdfFilename()}`]
         }));
       }, 3000);
 
-      const res = await clientApi.applyToJob(job.id, mode, true);
+      const res = await clientApi.applyToJob(job.id, mode, false);
 
       if (mode === 'co_pilot') {
         setTimeout(() => {
