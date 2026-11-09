@@ -44,7 +44,7 @@ No need to mess with a command prompt. Double-click either batch file:
 1. Checks for and terminates any stale background processes on ports `4173` and `5173`.
 2. Verifies whether Chrome DevTools Protocol (CDP port `9222`) is running; if not, automatically starts Chrome with remote debugging.
 3. Initializes the Express automation engine on port `4173` and Vite React UI on port `5173`.
-4. Launches a dedicated Windows Native App window via Microsoft Edge App Mode (`--app=http://localhost:5173`).
+4. Launches a dedicated Windows Native App window via Google Chrome / Chromium App Mode (`--app=http://localhost:5173`).
 5. **Zero Orphaned Processes**: When you close the app window, the supervisor script automatically cleans up and terminates all background engine and UI processes.
 
 ---

@@ -26,14 +26,18 @@ echo [jobSuite] Waiting for Vite UI to be ready at http://localhost:5173...
 powershell -NoProfile -Command "$ready = $false; for ($i = 0; $i -lt 30; $i++) { Start-Sleep -Seconds 1; try { $res = Invoke-WebRequest -Uri 'http://localhost:5173' -UseBasicParsing -TimeoutSec 1; if ($res.StatusCode -eq 200) { $ready = $true; break } } catch {} }; if (-not $ready) { Write-Host '[ERROR] Timed out waiting for Vite UI' -ForegroundColor Red; exit 1 }"
 if errorlevel 1 goto shutdown
 
-rem 4. Launch Native Window using Edge App mode
-echo [4/4] Opening Windows Native App Window...
-if exist "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" (
-    start /wait "" "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" --app="http://localhost:5173" --window-size=1440,920 --app-window-name="jobSuite" --user-data-dir="%LOCALAPPDATA%\jobSuite\edge_app"
-) else if exist "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" (
-    start /wait "" "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" --app="http://localhost:5173" --window-size=1440,920 --app-window-name="jobSuite" --user-data-dir="%LOCALAPPDATA%\jobSuite\edge_app"
+rem 4. Launch Native Window using Chromium / Chrome App mode
+echo [4/4] Opening Windows Native Chromium App Window...
+if exist "%ProgramFiles%\Google\Chrome\Application\chrome.exe" (
+    start /wait "" "%ProgramFiles%\Google\Chrome\Application\chrome.exe" --app="http://localhost:5173" --window-size=1440,920 --app-window-name="jobSuite" --user-data-dir="%LOCALAPPDATA%\jobSuite\chromium_app"
+) else if exist "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" (
+    start /wait "" "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" --app="http://localhost:5173" --window-size=1440,920 --app-window-name="jobSuite" --user-data-dir="%LOCALAPPDATA%\jobSuite\chromium_app"
+) else if exist "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe" (
+    start /wait "" "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe" --app="http://localhost:5173" --window-size=1440,920 --app-window-name="jobSuite" --user-data-dir="%LOCALAPPDATA%\jobSuite\chromium_app"
+) else if exist "%LOCALAPPDATA%\Chromium\Application\chrome.exe" (
+    start /wait "" "%LOCALAPPDATA%\Chromium\Application\chrome.exe" --app="http://localhost:5173" --window-size=1440,920 --app-window-name="jobSuite" --user-data-dir="%LOCALAPPDATA%\jobSuite\chromium_app"
 ) else (
-    start /wait msedge.exe --app="http://localhost:5173" --window-size=1440,920
+    start /wait chrome.exe --app="http://localhost:5173" --window-size=1440,920
 )
 
 :shutdown
