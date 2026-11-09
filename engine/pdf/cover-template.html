@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{NAME}} — Cover Letter</title>
+<style>
+  :root {
+    --font-family: Arial, "Helvetica Neue", "Liberation Sans", sans-serif;
+    --font-size: 11px;
+    --page-margin: 0.75in;
+    --color-text: #1a1a24;
+    --color-muted: #555566;
+    --color-heading: #0a0a14;
+    --color-border: #d0d0d8;
+  }
+
+  @page {
+    margin: var(--page-margin);
+    size: letter portrait;
+  }
+
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-variant-ligatures: none;
+  }
+
+  body {
+    font-family: var(--font-family);
+    font-size: var(--font-size);
+    line-height: 1.6;
+    color: var(--color-text);
+    background: #ffffff;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 7.5in;
+    margin: 0 auto;
+  }
+
+  .header {
+    border-bottom: 1.5px solid var(--color-border);
+    padding-bottom: 14px;
+    margin-bottom: 24px;
+  }
+
+  .header h1 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--color-heading);
+    text-transform: uppercase;
+    letter-spacing: -0.01em;
+    margin-bottom: 4px;
+  }
+
+  .contact-info {
+    font-size: 10.5px;
+    color: var(--color-muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .meta-block {
+    margin-bottom: 24px;
+    color: var(--color-muted);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  .date {
+    margin-bottom: 12px;
+    font-weight: 600;
+    color: var(--color-heading);
+  }
+
+  .recipient {
+    margin-bottom: 16px;
+  }
+
+  .subject {
+    font-weight: 700;
+    color: #1e293b;
+    font-size: 12px;
+    margin-bottom: 16px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .content p {
+    margin-bottom: 14px;
+    text-align: justify;
+  }
+
+  .bullet-list {
+    margin: 12px 0 16px 20px;
+    list-style-type: disc;
+  }
+
+  .bullet-list li {
+    margin-bottom: 6px;
+    line-height: 1.5;
+  }
+
+  .signature {
+    margin-top: 28px;
+  }
+
+  .signature-name {
+    font-weight: 700;
+    color: var(--color-heading);
+    margin-top: 6px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <!-- Header -->
+  <header class="header">
+    <h1>{{NAME}}</h1>
+    <div class="contact-info">
+      <span>{{LOCATION}}</span>
+      <span>•</span>
+      <span>{{EMAIL}}</span>
+      <span>•</span>
+      <span>{{PHONE}}</span>
+      {{#LINKEDIN_URL}}
+      <span>•</span>
+      <span>{{LINKEDIN_URL}}</span>
+      {{/LINKEDIN_URL}}
+    </div>
+  </header>
+
+  <!-- Addressee Details -->
+  <div class="meta-block">
+    <div class="date">{{DATE}}</div>
+    <div class="recipient">
+      <strong>Hiring Team & Engineering Leadership</strong><br>
+      {{COMPANY}}<br>
+      {{LOCATION}}
+    </div>
+    <div class="subject">
+      Application for {{ROLE_TITLE}}
+    </div>
+  </div>
+
+  <!-- Body Content -->
+  <div class="content">
+    <p>Dear Hiring Team at {{COMPANY}},</p>
+
+    <p>{{OPENING_HOOK}}</p>
+
+    <p>{{PROFILE_PARAGRAPH}}</p>
+
+    <p>Throughout my career, I have prioritized high-ownership engineering with measurable production outcomes:</p>
+    <ul class="bullet-list">
+      {{KEY_ACHIEVEMENTS}}
+    </ul>
+
+    <p>{{VALUE_PROPOSITION}}</p>
+
+    <p>I would welcome the opportunity to discuss how my hands-on background can contribute to {{COMPANY}}'s mission. Thank you for your time and consideration.</p>
+
+    <div class="signature">
+      Sincerely,
+      <div class="signature-name">{{NAME}}</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
