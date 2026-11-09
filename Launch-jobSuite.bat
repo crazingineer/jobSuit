@@ -1,10 +1,13 @@
 @echo off
+rem =====================================================================
+rem   jobSuite - Windows Native AI Job Automation and Career-Ops
+rem =====================================================================
 title jobSuite Desktop App
 cd /d "%~dp0"
 
-echo ===================================================================
-echo   jobSuite — Windows Native AI Job Automation & Career-Ops
-echo ===================================================================
+echo =====================================================================
+echo   jobSuite - Windows Native AI Job Automation and Career-Ops
+echo =====================================================================
 
 echo [1/3] Checking ports 4173 and 5173 for stale processes...
 powershell -NoProfile -Command "Get-NetTCPConnection -LocalPort 4173,5173 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"
