@@ -20,12 +20,16 @@ export class NaukriApplyAdapter {
     const runId = `run-nk-${Date.now()}`;
     console.log(`[Naukri Applier] Applying for "${job.title}" @ ${job.company} [Mode: ${mode.toUpperCase()}]`);
 
+    const expStr = vault.qaSnippets?.total_experience || '4.5';
+    const match = expStr.match(/(\d+(?:\.\d+)?)/);
+    const experienceYears = match ? match[1] : '4.5';
+
     const formAnswers: Record<string, any> = {
       currentCtc: `${vault.currentCtcLakhs} LPA`,
       expectedCtc: `${vault.expectedCtcLakhs} LPA`,
       noticePeriod: `${vault.noticePeriodDays} days`,
-      experienceYears: '6',
-      preferredLocation: vault.preferredLocations[0] || 'Bengaluru',
+      experienceYears,
+      preferredLocation: vault.preferredLocations[0] || 'Pune',
       relocation: vault.relocationWilling ? 'Yes' : 'No'
     };
 

@@ -86,6 +86,10 @@ export interface MasterCV {
     lead?: string;
     fullstack?: string;
     general?: string;
+    powerPlatform?: string;
+    dataEngineering?: string;
+    aiAutomation?: string;
+    [key: string]: string | undefined;
   };
   skillsTaxonomy: {
     languages: string[];
@@ -94,6 +98,10 @@ export interface MasterCV {
     cloudDevops: string[];
     databases?: string[];
     tools?: string[];
+    sharepointMigration?: string[];
+    toolsVersionControl?: string[];
+    certificationsList?: string[];
+    [key: string]: string[] | undefined;
   };
   workExperience: WorkExperience[];
   education: Education[];

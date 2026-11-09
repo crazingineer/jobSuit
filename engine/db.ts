@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { DEFAULT_PERSONAL_VAULT, DEFAULT_MASTER_CV } from './master-seed';
 
 const DB_DIR = path.resolve(process.cwd(), 'data');
 if (!fs.existsSync(DB_DIR)) {
@@ -29,29 +30,29 @@ export function initDatabase() {
         last_working_day, buyout_available, preferred_locations, relocation_willing,
         authorized_countries, needs_sponsorship, visa_status, qa_snippets, updated_at
       ) VALUES (
-        1,
-        'Arjun Sharma',
-        'arjun.sharma@example.com',
-        '+91 98765 43210',
-        'Bengaluru, Karnataka, India',
-        'https://linkedin.com/in/arjun-sharma-builder',
-        'https://github.com/arjunsharma',
-        'https://arjunsharma.dev',
-        26.0,
-        38.0,
-        1,
-        60,
-        NULL,
-        1,
-        '["Bengaluru", "Hyderabad", "Remote (India/US)"]',
-        1,
-        '["IN"]',
-        0,
-        'Indian Citizen (No visa sponsorship required for IN roles)',
-        '{"why_change": "Seeking high-ownership AI systems & agentic workflow engineering roles in hyper-growth tech teams.", "leadership_style": "Hands-on technical leadership, metrics-driven architecture, iterative high-velocity shipping.", "remote_philosophy": "Deep async documentation, proactive Slack/Teams communication, rigorous CI/CD."}',
-        datetime('now')
+        1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')
       )
-    `).run();
+    `).run(
+      DEFAULT_PERSONAL_VAULT.fullName,
+      DEFAULT_PERSONAL_VAULT.email,
+      DEFAULT_PERSONAL_VAULT.phone,
+      DEFAULT_PERSONAL_VAULT.location,
+      DEFAULT_PERSONAL_VAULT.linkedinUrl,
+      DEFAULT_PERSONAL_VAULT.githubUrl,
+      DEFAULT_PERSONAL_VAULT.portfolioUrl,
+      DEFAULT_PERSONAL_VAULT.currentCtcLakhs,
+      DEFAULT_PERSONAL_VAULT.expectedCtcLakhs,
+      DEFAULT_PERSONAL_VAULT.ctcNegotiable ? 1 : 0,
+      DEFAULT_PERSONAL_VAULT.noticePeriodDays,
+      DEFAULT_PERSONAL_VAULT.lastWorkingDay || null,
+      DEFAULT_PERSONAL_VAULT.buyoutAvailable ? 1 : 0,
+      JSON.stringify(DEFAULT_PERSONAL_VAULT.preferredLocations),
+      DEFAULT_PERSONAL_VAULT.relocationWilling ? 1 : 0,
+      JSON.stringify(DEFAULT_PERSONAL_VAULT.authorizedCountries),
+      DEFAULT_PERSONAL_VAULT.needsSponsorship ? 1 : 0,
+      DEFAULT_PERSONAL_VAULT.visaStatus,
+      JSON.stringify(DEFAULT_PERSONAL_VAULT.qaSnippets)
+    );
   }
 
   // Seed default master CV if empty
@@ -62,21 +63,18 @@ export function initDatabase() {
         id, version, title, is_active, summary_variants, skills_taxonomy,
         work_experience, education, certifications, projects, awards, created_at, updated_at
       ) VALUES (
-        'cv-master-v1',
-        1,
-        'Master AI & Distributed Systems Engineer CV',
-        1,
-        '{"ai_engineer": "Senior AI Systems & Full-Stack Engineer with 6+ years designing scalable agentic workflows, LLMOps pipelines, and low-latency microservices. Spearheaded production systems processing 10M+ daily events with 99.99% uptime.", "lead": "Lead AI Architect with proven track record in end-to-end ML platform delivery, technical product discovery, and cross-functional engineering leadership."}',
-        '{"languages": ["TypeScript", "Python", "Rust", "Go", "SQL"], "frameworks": ["React 19", "Next.js", "FastAPI", "Node.js", "Tailwind CSS"], "ai_llm": ["LangChain", "LlamaIndex", "Playwright", "Gemini API", "Claude SDK", "OpenAI APIs", "vLLM", "Ollama"], "cloud_devops": ["AWS (ECS, Lambda, S3)", "Docker", "Kubernetes", "PostgreSQL", "Redis", "Kafka"]}',
-        '[{"company": "HyperFlow Tech", "role": "Senior AI & Platform Engineer", "location": "Bengaluru (Hybrid)", "dates": "2023 - Present", "bullets": [{"id": "b1", "text": "Architected multi-agent customer support automation platform using Playwright CDP and Gemini 1.5, deflecting 42% of manual tier-1 tickets and saving $180k/year in operational overhead.", "metrics": "42% ticket deflection, $180k savings", "tags": ["AI", "Playwright", "LLMOps"]}, {"id": "b2", "text": "Engineered real-time document extraction and RAG pipeline indexing 2.5M enterprise contracts with sub-120ms vector retrieval latency.", "metrics": "2.5M docs, 120ms retrieval", "tags": ["RAG", "VectorDB", "FastAPI"]}]}, {"company": "CloudMatrix Systems", "role": "Full-Stack Software Engineer", "location": "Bengaluru", "dates": "2020 - 2023", "bullets": [{"id": "b3", "text": "Built mission-critical event streaming gateway in Go and Kafka handling peak loads of 45,000 req/sec with P99 latency under 18ms.", "metrics": "45k req/sec, <18ms P99", "tags": ["Go", "Kafka", "High-Throughput"]}, {"id": "b4", "text": "Mentored 5 junior engineers and established zero-downtime deployment pipelines with Docker and GitHub Actions.", "metrics": "5 engineers mentored", "tags": ["Mentorship", "CI/CD"]}]}]',
-        '[{"degree": "Bachelor of Technology in Computer Science & Engineering", "institution": "National Institute of Technology (NIT)", "location": "India", "year": "2020", "description": "First Class with Distinction. Specialization in Distributed Algorithms & Applied Machine Learning."}]',
-        '[{"title": "AWS Certified Solutions Architect – Associate", "issuer": "Amazon Web Services", "year": "2023", "url": "https://aws.amazon.com/verification"}]',
-        '[{"name": "jobSuite Desktop", "description": "Ultra-efficient Windows native AI Career-Ops app built with Tauri v2, React 19, and Playwright CDP stealth automation.", "tech": ["Tauri v2", "React 19", "Playwright", "SQLite"], "bullets": ["Sub-50ms native UI response", "Automated CDP persistent session handling"], "url": "https://github.com/example/jobsuite"}]',
-        '[{"title": "Winner, National GenAI Hackathon", "org": "TechSparks", "year": "2024"}]',
-        datetime('now'),
-        datetime('now')
+        'cv-master-v1', 1, ?, 1, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now')
       )
-    `).run();
+    `).run(
+      DEFAULT_MASTER_CV.title,
+      JSON.stringify(DEFAULT_MASTER_CV.summaryVariants),
+      JSON.stringify(DEFAULT_MASTER_CV.skillsTaxonomy),
+      JSON.stringify(DEFAULT_MASTER_CV.workExperience),
+      JSON.stringify(DEFAULT_MASTER_CV.education),
+      JSON.stringify(DEFAULT_MASTER_CV.certifications),
+      JSON.stringify(DEFAULT_MASTER_CV.projects),
+      JSON.stringify(DEFAULT_MASTER_CV.awards)
+    );
   }
 
   // Seed default automation rules

@@ -59,7 +59,9 @@ export class LlmDomFallback {
     }
     // Total Experience
     else if (labelLower.includes('years of experience') || labelLower.includes('total experience') || labelLower.includes('how many years')) {
-      answerValue = '6';
+      const expStr = vault.qaSnippets?.total_experience || '4.5';
+      const match = expStr.match(/(\d+(?:\.\d+)?)/);
+      answerValue = match ? match[1] : '4.5';
     }
     // Work Authorization / Visa
     else if (labelLower.includes('sponsorship') || labelLower.includes('require visa') || labelLower.includes('authorized to work')) {
