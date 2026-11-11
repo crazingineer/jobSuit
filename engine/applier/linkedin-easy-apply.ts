@@ -27,7 +27,20 @@ export class LinkedInEasyApplyAdapter {
     options: { dryRun?: boolean } = {}
   ): Promise<ApplyResult> {
     const runId = `run-li-${Date.now()}`;
-    console.log(`[LinkedIn Applier] Starting application for "${job.title}" @ ${job.company} [Mode: ${mode.toUpperCase()}]`);
+    if (!job.easyApply) {
+      const msg = `"${job.title}" @ ${job.company} is an Offsite External ATS posting (easyApply=false), not LinkedIn Easy Apply.`;
+      console.warn(`[LinkedIn Applier Guard] ${msg}`);
+      return {
+        runId,
+        success: false,
+        mode,
+        status: 'failed',
+        stepReached: 'Rejected by Easy Apply Guard — Job uses External ATS',
+        formAnswers: {},
+        errorMessage: msg
+      };
+    }
+    console.log(`[LinkedIn Easy Apply] Starting onsite modal application for "${job.title}" @ ${job.company} [Mode: ${mode.toUpperCase()}]`);
 
     const formAnswers: Record<string, any> = {
       phone: vault.phone,

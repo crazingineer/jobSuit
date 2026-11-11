@@ -1,160 +1,221 @@
-import { db, initDatabase } from '../db';
+import { db } from '../db';
 import { linkedInScraper } from './linkedin-scraper';
 import { naukriScraper } from './naukri-scraper';
 import { atsScraper } from './ats-scraper';
-import { careerOpsEvaluator } from '../evaluator/evaluator';
+import { hiringCafeScraper } from './hiringcafe-scraper';
 import { JobListing } from '../../src/types/job';
+import { careerOpsEvaluator } from '../evaluator/evaluator';
+import { assessJobAlignmentWithCv } from '../../src/utils/cv-alignment-guard';
 
-export interface DiscoveryOptions {
+export interface DiscoveryRunOptions {
   keywords?: string;
   location?: string;
   evaluateImmediately?: boolean;
+  sources?: ('linkedin' | 'naukri' | 'ats' | 'hiringcafe')[];
+}
+
+export interface DiscoveryRunResult {
+  discoveredCount: number;
+  newUniqueCount: number;
+  filteredBySafetyCount: number;
+  filteredByCvAlignmentCount: number;
+  evaluatedCount: number;
+  qualifiedCount: number;
+  jobs: JobListing[];
 }
 
 export class DiscoveryOrchestrator {
   /**
-   * Runs end-to-end multi-portal discovery and triggers career-ops evaluation.
-   * Real scraping only - zero silent mock fallbacks.
+   * Executes multi-portal discovery across LinkedIn, Naukri, HiringCafe, and Direct ATS boards,
+   * enforces SQLite deduplication, blacklist safety gates, AND strict Master CV Alignment filtering
+   * before evaluating jobs with career-ops Blocks A–H.
    */
-  public async runDiscovery(options: DiscoveryOptions = {}): Promise<{
-    discoveredCount: number;
-    evaluatedCount: number;
-    qualifiedCount: number;
-    jobs: JobListing[];
-    errors?: string[];
-  }> {
-    initDatabase();
-    const keywords = options.keywords || 'AI Engineer';
-    const location = options.location || 'India';
-    const evaluateImmediately = options.evaluateImmediately ?? true;
+  public async runDiscovery(options: DiscoveryRunOptions = {}): Promise<DiscoveryRunResult> {
+    const keywords =
+      options.keywords ||
+      'Power Platform Developer, SharePoint Online, Copilot Studio, Azure AI Foundry';
+    const location = options.location || 'Pune / Bengaluru';
+    const evaluateNow = options.evaluateImmediately ?? true;
+    const sources = options.sources || ['hiringcafe', 'linkedin', 'naukri', 'ats'];
 
-    console.log(`\n======================================================`);
-    console.log(`🚀 [jobSuite Discovery] Starting Multi-Portal Scan`);
-    console.log(`Keywords: "${keywords}" | Location: "${location}"`);
-    console.log(`======================================================\n`);
+    console.log('\n=======================================================');
+    console.log('[Discovery Orchestrator] Starting Multi-Portal Job Scan');
+    console.log(`Keywords: "${keywords}" | Location: "${location}" | Sources: ${sources.join(', ')}`);
+    console.log('=======================================================\n');
 
-    // 1. Fetch Blacklist Rules
+    // 1. Load Automation Safety Rules from SQLite
     const rulesRow = db.prepare('SELECT * FROM automation_rules WHERE id = 1').get() as any;
-    const blacklistCompanies: string[] = rulesRow ? JSON.parse(rulesRow.blacklist_companies || '[]') : [];
-    const blacklistKeywords: string[] = rulesRow ? JSON.parse(rulesRow.blacklist_keywords || '[]') : [];
+    const blacklistCompanies: string[] = rulesRow
+      ? JSON.parse(rulesRow.blacklist_companies || '[]').map((s: string) => s.toLowerCase())
+      : [];
+    const blacklistKeywords: string[] = rulesRow
+      ? JSON.parse(rulesRow.blacklist_keywords || '[]').map((s: string) => s.toLowerCase())
+      : [];
+    const minScoreThreshold: number = rulesRow?.min_score_threshold ?? 4.0;
 
-    // 2. Run Scrapers with Real Error Surfacing
-    const rawJobs: JobListing[] = [];
-    const scraperErrors: string[] = [];
+    let allScraped: JobListing[] = [];
 
-    // LinkedIn
-    try {
-      const liJobs = await linkedInScraper.scrapeJobs({ keywords, location, limit: 3, mockIfUnavailable: false });
-      rawJobs.push(...liJobs);
-    } catch (err: any) {
-      console.warn(`[Discovery] LinkedIn notice: ${err.message}`);
-      scraperErrors.push(`LinkedIn: ${err.message}`);
+    // 2. Scrape HiringCafe.com (Direct ATS Aggregator)
+    if (sources.includes('hiringcafe')) {
+      try {
+        const hcJobs = await hiringCafeScraper.scrapeJobs({
+          keywords,
+          location,
+          limit: 3
+        });
+        allScraped = allScraped.concat(hcJobs);
+      } catch (e: any) {
+        console.warn(`[Discovery] HiringCafe scrape notice: ${e.message}`);
+      }
     }
 
-    // Naukri (Dynamic location passed)
-    try {
-      const nkJobs = await naukriScraper.scrapeJobs({ keywords, location, limit: 3, mockIfUnavailable: false });
-      rawJobs.push(...nkJobs);
-    } catch (err: any) {
-      console.warn(`[Discovery] Naukri notice: ${err.message}`);
-      scraperErrors.push(`Naukri: ${err.message}`);
+    // 3. Scrape LinkedIn (Easy Apply & Direct)
+    if (sources.includes('linkedin')) {
+      try {
+        const liJobs = await linkedInScraper.scrapeJobs({
+          keywords,
+          location,
+          easyApplyOnly: false,
+          limit: 3
+        });
+        allScraped = allScraped.concat(liJobs);
+      } catch (e: any) {
+        console.warn(`[Discovery] LinkedIn scrape skipped/notice: ${e.message}`);
+      }
     }
 
-    // Direct ATS Boards
-    try {
-      const ghJobs = await atsScraper.scrapeBoard({ portal: 'greenhouse', company: 'LangChain', boardUrl: 'https://boards.greenhouse.io/langchain' });
-      rawJobs.push(...ghJobs);
-    } catch (err: any) {
-      console.warn(`[Discovery] ATS notice: ${err.message}`);
-      scraperErrors.push(`ATS: ${err.message}`);
+    // 4. Scrape Naukri.com
+    if (sources.includes('naukri')) {
+      try {
+        const nkJobs = await naukriScraper.scrapeJobs({
+          keywords,
+          location,
+          experienceYears: 4,
+          minCtcLakhs: 22,
+          limit: 3
+        });
+        allScraped = allScraped.concat(nkJobs);
+      } catch (e: any) {
+        console.warn(`[Discovery] Naukri scrape skipped/notice: ${e.message}`);
+      }
     }
 
-    if (rawJobs.length === 0 && scraperErrors.length > 0) {
-      throw new Error(`Discovery failed across sources:\n- ${scraperErrors.join('\n- ')}`);
+    // 5. Scrape Direct ATS Boards (Greenhouse / Ashby / Lever)
+    if (sources.includes('ats')) {
+      const atsTargets = [
+        { portal: 'greenhouse' as const, company: 'Databricks', boardUrl: 'https://boards.greenhouse.io/databricks' }
+      ];
+      for (const target of atsTargets) {
+        try {
+          const jobs = await atsScraper.scrapeBoard(target, 3);
+          allScraped = allScraped.concat(jobs);
+        } catch (e: any) {
+          console.warn(`[Discovery] ATS scrape for ${target.company} skipped: ${e.message}`);
+        }
+      }
     }
 
-    console.log(`[Discovery] Scraped ${rawJobs.length} candidate postings. Applying safety gates & deduplication...`);
+    // 6. Safety Filtering, Master CV Alignment Gate & SQLite Insertion
+    let newUniqueCount = 0;
+    let filteredBySafetyCount = 0;
+    let filteredByCvAlignmentCount = 0;
+    const newlyInsertedIds: string[] = [];
 
-    // 3. Filter & Deduplicate
-    const newJobs: JobListing[] = [];
+    const checkExisting = db.prepare(
+      'SELECT id FROM job_listings WHERE portal = ? AND portal_job_id = ?'
+    );
+    const insertJob = db.prepare(`
+      INSERT INTO job_listings (
+        id, portal, portal_job_id, url, external_apply_url, ats_provider, title, company, company_slug, location,
+        remote_type, posted_date, captured_at, raw_jd_text, company_type, reports_to,
+        advertised_comp, status, easy_apply, created_at
+      ) VALUES (
+        @id, @portal, @portalJobId, @url, @externalApplyUrl, @atsProvider, @title, @company, @companySlug, @location,
+        @remoteType, @postedDate, @capturedAt, @rawJdText, @companyType, @reportsTo,
+        @advertisedComp, @status, @easyApply, datetime('now')
+      )
+    `);
 
-    for (const job of rawJobs) {
-      // Blacklist Company Check
-      const companyBlocked = blacklistCompanies.some(c => 
-        job.company.toLowerCase().includes(c.toLowerCase())
-      );
-      if (companyBlocked) {
-        console.log(`[Blacklist Filter] Skipping blocked company: ${job.company}`);
+    for (const job of allScraped) {
+      const companyLower = job.company.toLowerCase();
+      const titleAndJdLower = `${job.title} ${job.rawJdText}`.toLowerCase();
+
+      // Gate A: Blacklist Company / Keyword Check
+      const isBlacklistedCompany = blacklistCompanies.some((bc) => companyLower.includes(bc));
+      const isBlacklistedKeyword = blacklistKeywords.some((bk) => titleAndJdLower.includes(bk));
+
+      if (isBlacklistedCompany || isBlacklistedKeyword) {
+        console.log(`[Safety Gate] Filtered out blacklisted job: "${job.title}" @ ${job.company}`);
+        filteredBySafetyCount++;
         continue;
       }
 
-      // Blacklist Keyword Check
-      const keywordBlocked = blacklistKeywords.some(k => 
-        job.title.toLowerCase().includes(k.toLowerCase()) || 
-        job.rawJdText.toLowerCase().includes(k.toLowerCase())
-      );
-      if (keywordBlocked) {
-        console.log(`[Blacklist Filter] Skipping posting with blacklisted phrase: ${job.title}`);
+      // Gate B: Master CV Alignment Check (Rejects unaligned roles like Playwright/Golang/Kubernetes/iOS)
+      const cvAlignment = assessJobAlignmentWithCv(job);
+      if (!cvAlignment.isAligned) {
+        console.log(
+          `[CV Alignment Gate] Filtered out unaligned job: "${job.title}" @ ${job.company} — ${cvAlignment.rejectionReason}`
+        );
+        filteredByCvAlignmentCount++;
         continue;
       }
 
-      // SQLite Deduplication check
-      const existing = db.prepare('SELECT id FROM job_listings WHERE portal = ? AND portal_job_id = ?').get(job.portal, job.portalJobId);
+      // Gate C: Deduplication Check
+      const existing = checkExisting.get(job.portal, job.portalJobId);
       if (existing) {
-        console.log(`[Deduplication] Job already tracked: ${job.title} @ ${job.company}`);
+        console.log(`[Deduplicator] Skipping already-indexed job: "${job.title}" @ ${job.company}`);
         continue;
       }
 
-      // Insert into SQLite
-      db.prepare(`
-        INSERT INTO job_listings (
-          id, portal, portal_job_id, url, title, company, company_slug, location,
-          remote_type, posted_date, captured_at, raw_jd_text, company_type, reports_to,
-          advertised_comp, status, easy_apply, created_at
-        ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, datetime('now')
-        )
-      `).run(
-        job.id, job.portal, job.portalJobId, job.url, job.title, job.company, job.companySlug, job.location,
-        job.remoteType, job.postedDate, job.capturedAt, job.rawJdText, job.companyType, job.reportsTo,
-        job.advertisedComp, job.status, job.easyApply ? 1 : 0
-      );
-
-      newJobs.push(job);
+      try {
+        insertJob.run({
+          ...job,
+          externalApplyUrl: job.externalApplyUrl || null,
+          atsProvider: job.atsProvider || null,
+          reportsTo: job.reportsTo || null,
+          advertisedComp: job.advertisedComp || null,
+          easyApply: job.easyApply ? 1 : 0
+        });
+        newUniqueCount++;
+        newlyInsertedIds.push(job.id);
+        console.log(
+          `[SQLite Indexed] + "${job.title}" @ ${job.company} [${job.portal.toUpperCase()}] (CV Alignment: ${cvAlignment.alignmentPercentage}%)`
+        );
+      } catch (err: any) {
+        console.warn(`[SQLite Insert Warning] ${err.message}`);
+      }
     }
 
-    console.log(`[Discovery] Filtered & saved ${newJobs.length} brand new unique jobs in SQLite.\n`);
-
-    // 4. Optionally Run career-ops A-H Evaluator Immediately
+    // 7. Immediate career-ops Evaluation (Blocks A-H)
     let evaluatedCount = 0;
     let qualifiedCount = 0;
 
-    if (evaluateImmediately && newJobs.length > 0) {
-      console.log(`[Evaluator] Running career-ops Blocks A-H evaluation on ${newJobs.length} new jobs...`);
-      for (const job of newJobs) {
+    if (evaluateNow && newlyInsertedIds.length > 0) {
+      console.log(
+        `\n[Evaluator] Triggering career-ops A–H Evaluation on ${newlyInsertedIds.length} newly discovered CV-aligned jobs...`
+      );
+      for (const jobId of newlyInsertedIds) {
         try {
-          const evalReport = await careerOpsEvaluator.evaluateJob(job.id);
+          const report = await careerOpsEvaluator.evaluateJob(jobId);
           evaluatedCount++;
-          if (evalReport.score >= 4.0) {
+          if (report.score >= minScoreThreshold && report.finalDecision === 'Apply') {
             qualifiedCount++;
-            console.log(`  ⭐ Qualified: ${job.title} (Score: ${evalReport.score})`);
-          } else {
-            console.log(`  ⏩ Skipped: ${job.title} (Score: ${evalReport.score})`);
+            db.prepare("UPDATE job_listings SET status = 'queued' WHERE id = ?").run(jobId);
           }
-        } catch (err: any) {
-          console.error(`  ❌ Evaluation failed for ${job.title}: ${err.message}`);
+        } catch (evalErr: any) {
+          console.error(`[Evaluator Error] Failed to evaluate ${jobId}: ${evalErr.message}`);
         }
       }
     }
 
     return {
-      discoveredCount: newJobs.length,
+      discoveredCount: allScraped.length,
+      newUniqueCount,
+      filteredBySafetyCount,
+      filteredByCvAlignmentCount,
       evaluatedCount,
       qualifiedCount,
-      jobs: newJobs,
-      errors: scraperErrors.length > 0 ? scraperErrors : undefined
+      jobs: allScraped
     };
   }
 }

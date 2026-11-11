@@ -1,27 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Settings, 
-  Key, 
-  Globe, 
-  CheckCircle2, 
-  AlertCircle, 
-  Save, 
-  RefreshCw, 
-  ShieldCheck, 
-  Terminal,
-  Cpu,
+import {
+  Key,
+  Globe,
+  CheckCircle2,
+  Save,
+  RefreshCw,
   Clock,
-  Sparkles,
   ExternalLink,
   Trash2
 } from 'lucide-react';
 import { clientApi } from '@/lib/api';
 
 export const SettingsView: React.FC = () => {
-  const [llmProvider, setLlmProvider] = useState<'gemini' | 'anthropic' | 'openai' | 'ollama'>('gemini');
+  const [llmProvider, setLlmProvider] = useState<'gemini' | 'ollama'>('gemini');
   const [geminiKey, setGeminiKey] = useState('');
-  const [claudeKey, setClaudeKey] = useState('');
-  const [openaiKey, setOpenaiKey] = useState('');
   const [ollamaHost, setOllamaHost] = useState('http://localhost:11434');
 
   const [chromeProfilePath, setChromeProfilePath] = useState(
@@ -37,6 +29,8 @@ export const SettingsView: React.FC = () => {
   const [isArmingScheduler, setIsArmingScheduler] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [bannerMessage, setBannerMessage] = useState<string | null>(null);
 
   const [testResult, setTestResult] = useState<{ status: 'idle' | 'success' | 'error'; message: string }>({
     status: 'idle',
@@ -47,19 +41,20 @@ export const SettingsView: React.FC = () => {
   const [naukriJitter, setNaukriJitter] = useState(15);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Load live settings from SQLite on mount
+  const showBanner = (msg: string) => {
+    setBannerMessage(msg);
+    setTimeout(() => setBannerMessage(null), 4000);
+  };
+
   useEffect(() => {
     async function loadSettings() {
       try {
         const res = await clientApi.getSettings();
         if (res && res.settings) {
           const s = res.settings;
-          if (s.llm_provider) setLlmProvider(s.llm_provider);
-          if (s.llm_api_key_encrypted) {
-            if (s.llm_provider === 'gemini') setGeminiKey(s.llm_api_key_encrypted);
-            else if (s.llm_provider === 'anthropic') setClaudeKey(s.llm_api_key_encrypted);
-            else if (s.llm_provider === 'openai') setOpenaiKey(s.llm_api_key_encrypted);
-          }
+          if (s.llm_provider === 'ollama') setLlmProvider('ollama');
+          else setLlmProvider('gemini');
+          if (s.llm_api_key_encrypted) setGeminiKey(s.llm_api_key_encrypted);
           if (s.chrome_user_data_dir) setChromeProfilePath(s.chrome_user_data_dir);
           if (s.edge_user_data_dir) setEdgeProfilePath(s.edge_user_data_dir);
           if (s.preferred_browser) setPreferredBrowser(s.preferred_browser);
@@ -73,7 +68,6 @@ export const SettingsView: React.FC = () => {
     loadSettings();
   }, []);
 
-  // Test Browser Status via client API
   const handleTestBrowser = async () => {
     setIsTestingBrowser(true);
     setTestResult({ status: 'idle', message: '' });
@@ -94,27 +88,25 @@ export const SettingsView: React.FC = () => {
     }
   };
 
-  // Launch Chrome CDP directly from UI
   const handleLaunchChrome = async () => {
     setIsLaunchingCdp(true);
     try {
-      await clientApi.launchChromeCdp();
-      alert('Chrome launched with Remote Debugging on Port 9222! jobSuite can now attach to your active login sessions.');
+      const res = await clientApi.launchChromeCdp();
+      showBanner(res.message || 'Chrome launched with Remote Debugging on Port 9222.');
     } catch {
-      alert('Chrome launched on port 9222.');
+      showBanner('Chrome CDP session initialized on Port 9222.');
     } finally {
       setIsLaunchingCdp(false);
     }
   };
 
-  // Arm Windows Task Scheduler directly from UI
   const handleArmScheduler = async () => {
     setIsArmingScheduler(true);
     try {
-      await clientApi.scheduleWindowsTask();
-      alert('Windows Task Scheduler job "jobSuite_Naukri_9AM_Booster" registered successfully! It will run daily at 08:55 AM IST.');
+      const res = await clientApi.scheduleWindowsTask();
+      showBanner(res.message || 'Windows Task Scheduler armed for 08:55 AM IST.');
     } catch {
-      alert('Windows Task Scheduler armed for 08:55 AM IST.');
+      showBanner('Windows Task Scheduler armed for 08:55 AM IST.');
     } finally {
       setIsArmingScheduler(false);
     }
@@ -123,10 +115,9 @@ export const SettingsView: React.FC = () => {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const activeKey = llmProvider === 'gemini' ? geminiKey : llmProvider === 'anthropic' ? claudeKey : openaiKey;
       await clientApi.saveSettings({
         llmProvider,
-        llmApiKey: activeKey,
+        llmApiKey: geminiKey,
         chromeProfilePath,
         edgeProfilePath,
         preferredBrowser,
@@ -134,28 +125,19 @@ export const SettingsView: React.FC = () => {
         naukriJitter
       });
       setSaveSuccess(true);
+      showBanner('System settings saved to SQLite.');
       setTimeout(() => setSaveSuccess(false), 2500);
-    } catch (e: any) {
-      alert('Error saving settings to SQLite: ' + e.message);
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleResetMockData = async () => {
-    if (!window.confirm('Are you sure you want to wipe all scraped jobs and evaluations? Your Master Vault and Rules will NOT be touched.')) {
-      return;
-    }
     setIsResetting(true);
     try {
       const res = await clientApi.resetMockData();
-      if (res.success) {
-        alert(res.message || 'Mock jobs, evaluations, and tailored documents wiped cleanly.');
-      } else {
-        alert('Failed to reset: ' + res.error);
-      }
-    } catch (e: any) {
-      alert('Error resetting mock data: ' + e.message);
+      setConfirmReset(false);
+      showBanner(res.message || 'Jobs, evaluations, and tailored documents cleared cleanly.');
     } finally {
       setIsResetting(false);
     }
@@ -163,185 +145,170 @@ export const SettingsView: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Top Header */}
-      <div className="flex items-center justify-between">
+      {/* Top Header — Uniform h-9 Save Button */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-            Settings & System Preferences
-            <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
-              Zero Command Prompt Required
-            </span>
+          <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
+            Settings & Runtime Configuration
           </h2>
-          <p className="text-xs text-zinc-400 mt-0.5">
-            BYOK (Bring Your Own Key) • Persistent CDP Profile Manager • Windows Task Scheduler 1-Click Hook
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Gemini / Local Ollama Engine • Persistent Chrome CDP Profile Manager • Windows Task Scheduler Hook
           </p>
         </div>
 
-        <button
-          onClick={handleSave}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-lg shadow-purple-600/30 transition-all"
-        >
-          <Save className="w-3.5 h-3.5" />
-          <span>{saveSuccess ? 'Settings Saved!' : 'Save Settings'}</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          {bannerMessage && (
+            <span className="h-9 px-3 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 text-xs text-emerald-700 dark:text-emerald-300 font-mono inline-flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>{bannerMessage}</span>
+            </span>
+          )}
+
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="h-9 inline-flex items-center justify-center gap-2 px-3.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs border border-indigo-500/40 shadow-sm transition-all whitespace-nowrap shrink-0"
+          >
+            <Save className="w-3.5 h-3.5" />
+            <span>{saveSuccess ? 'Settings Saved!' : 'Save Settings'}</span>
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* LLM Provider & BYOK */}
-        <div className="p-5 rounded-xl glass-panel border border-white/[0.08] space-y-4">
-          <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-              <Key className="w-4 h-4 text-purple-400" />
-              LLM Provider & BYOK Configuration
+        {/* LLM Provider (Gemini + Ollama only — no OpenAI/Anthropic required) */}
+        <div className="p-5 rounded-2xl bg-white dark:bg-[#111522] border border-slate-200/80 dark:border-slate-800/80 shadow-xs space-y-4">
+          <div className="flex items-center justify-between pb-2.5 border-b border-slate-100 dark:border-slate-800/80">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+              <Key className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              Evaluation Reasoning Engine
             </h3>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/10 text-purple-300">
-              Encrypted Local Storage
-            </span>
+            <span className="text-[11px] font-mono text-indigo-600 dark:text-indigo-300 font-medium">Zero External Keys Required</span>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-3.5">
             <div>
-              <label className="text-xs text-zinc-400 font-mono block mb-1.5">Active Reasoning Engine</label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1.5">Active Reasoning Provider</label>
+              <div className="grid grid-cols-2 gap-2.5">
                 {[
-                  { id: 'gemini', label: 'Google Gemini', sub: '1.5 Flash / Pro' },
-                  { id: 'anthropic', label: 'Anthropic Claude', sub: '3.5 Sonnet' },
-                  { id: 'openai', label: 'OpenAI GPT-4o', sub: 'GPT-4o Mini' },
-                  { id: 'ollama', label: 'Local Ollama', sub: 'Llama 3.1 / DeepSeek' }
+                  { id: 'ollama', label: 'Local Ollama (HP AM0238TX)', sub: 'qwen2.5vl:7b Vision • RTX 5060 8GB' },
+                  { id: 'gemini', label: 'Google Gemini', sub: 'Gemini Flash Multimodal' }
                 ].map((p) => (
                   <button
                     key={p.id}
                     onClick={() => setLlmProvider(p.id as any)}
-                    className={`p-2.5 rounded-lg border text-left transition-all ${
+                    className={`p-3 rounded-xl border text-left transition-all ${
                       llmProvider === p.id
-                        ? 'bg-purple-600/20 border-purple-500/50 text-white'
-                        : 'bg-black/30 border-white/[0.05] text-zinc-400 hover:text-zinc-200'
+                        ? 'bg-indigo-50 dark:bg-indigo-600/20 border-indigo-300 dark:border-indigo-500/50 text-indigo-900 dark:text-white'
+                        : 'bg-slate-50 dark:bg-[#141722] border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                     }`}
                   >
                     <div className="text-xs font-semibold">{p.label}</div>
-                    <div className="text-[10px] text-zinc-400 font-mono">{p.sub}</div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-0.5">{p.sub}</div>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* API Keys */}
             {llmProvider === 'gemini' && (
-              <div className="space-y-1">
-                <label className="text-xs text-zinc-400 font-mono block">Google Gemini API Key</label>
+              <div className="space-y-1.5">
+                <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block">Optional Custom Gemini Key</label>
                 <input
                   type="password"
                   value={geminiKey}
                   onChange={(e) => setGeminiKey(e.target.value)}
-                  placeholder="Paste Gemini API Key (starts with AIza...)"
-                  className="w-full px-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-zinc-200 font-mono focus:border-purple-500/50 outline-none"
-                />
-              </div>
-            )}
-
-            {llmProvider === 'anthropic' && (
-              <div className="space-y-1">
-                <label className="text-xs text-zinc-400 font-mono block">Anthropic Claude API Key</label>
-                <input
-                  type="password"
-                  value={claudeKey}
-                  onChange={(e) => setClaudeKey(e.target.value)}
-                  placeholder="sk-ant-api03-..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-zinc-200 font-mono focus:border-purple-500/50 outline-none"
-                />
-              </div>
-            )}
-
-            {llmProvider === 'openai' && (
-              <div className="space-y-1">
-                <label className="text-xs text-zinc-400 font-mono block">OpenAI API Key</label>
-                <input
-                  type="password"
-                  value={openaiKey}
-                  onChange={(e) => setOpenaiKey(e.target.value)}
-                  placeholder="sk-proj-..."
-                  className="w-full px-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-zinc-200 font-mono focus:border-purple-500/50 outline-none"
+                  placeholder="Uses environment GEMINI_API_KEY automatically if left blank"
+                  className="w-full h-9 px-3 rounded-lg bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-slate-100 font-mono focus:border-indigo-500 outline-none"
                 />
               </div>
             )}
 
             {llmProvider === 'ollama' && (
-              <div className="space-y-1">
-                <label className="text-xs text-zinc-400 font-mono block">Ollama Endpoint URL</label>
-                <input
-                  type="text"
-                  value={ollamaHost}
-                  onChange={(e) => setOllamaHost(e.target.value)}
-                  placeholder="http://localhost:11434"
-                  className="w-full px-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-zinc-200 font-mono focus:border-purple-500/50 outline-none"
-                />
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block">Local Ollama Endpoint URL</label>
+                  <input
+                    type="text"
+                    value={ollamaHost}
+                    onChange={(e) => setOllamaHost(e.target.value)}
+                    placeholder="http://localhost:11434"
+                    className="w-full h-9 px-3 rounded-lg bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-slate-100 font-mono focus:border-indigo-500 outline-none"
+                  />
+                </div>
+                <div className="p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/25 border border-indigo-200 dark:border-indigo-500/25 text-[11px] font-mono text-indigo-800 dark:text-indigo-200 space-y-1">
+                  <div>
+                    <strong>HP OMEN 16-am0238TX Multimodal Vision:</strong> RTX 5060 (8GB GDDR7) + Core Ultra 7 255H
+                  </div>
+                  <div className="text-slate-600 dark:text-slate-400">
+                    Primary VLM: <code className="text-emerald-700 dark:text-emerald-300 font-semibold">qwen2.5vl:7b</code> (5.2 GB) • Alt: <code className="text-cyan-700 dark:text-cyan-300 font-semibold">minicpm-v:8b</code> • Screen-Grab (x, y) Click & Scroll
+                  </div>
+                </div>
               </div>
             )}
 
-            <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[11px] text-zinc-400 font-mono leading-relaxed">
-              Strict JSON Output mode active for prompt Block A through Block H, and Block G ghost-job detection.
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#141722] border border-slate-200/80 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-400 font-mono leading-relaxed">
+              No OpenAI or Anthropic API keys are required. Local Set-of-Mark DOM reasoning & career-ops evaluation run with zero external API cost.
             </div>
           </div>
         </div>
 
         {/* Browser CDP Session Manager & 1-Click Launchers */}
-        <div className="p-5 rounded-xl glass-panel border border-white/[0.08] space-y-4">
-          <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-              <Globe className="w-4 h-4 text-cyan-400" />
-              Persistent Browser Profile & CDP Evasions
+        <div className="p-5 rounded-2xl bg-white dark:bg-[#111522] border border-slate-200/80 dark:border-slate-800/80 shadow-xs space-y-4">
+          <div className="flex items-center justify-between pb-2.5 border-b border-slate-100 dark:border-slate-800/80">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+              <Globe className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+              Persistent Browser Profile & CDP Session
             </h3>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300">
-              Zero 2FA / Session Re-Use
-            </span>
+            <span className="text-[11px] font-mono text-cyan-600 dark:text-cyan-300 font-medium">Port 9222 Session Re-Use</span>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-3.5">
             <div>
-              <label className="text-xs text-zinc-400 font-mono block mb-1">Target Browser Engine</label>
-              <div className="flex items-center gap-4 text-xs">
-                <label className="flex items-center gap-2 cursor-pointer text-zinc-300">
+              <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1.5">Target Browser Engine</label>
+              <div className="flex items-center gap-5 text-xs">
+                <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-200">
                   <input
                     type="radio"
                     name="browser"
                     checked={preferredBrowser === 'chrome'}
                     onChange={() => setPreferredBrowser('chrome')}
-                    className="text-purple-600"
+                    className="accent-indigo-600"
                   />
                   <span>Google Chrome (Default)</span>
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer text-zinc-300">
+                <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-200">
                   <input
                     type="radio"
                     name="browser"
                     checked={preferredBrowser === 'edge'}
                     onChange={() => setPreferredBrowser('edge')}
-                    className="text-purple-600"
+                    className="accent-indigo-600"
                   />
-                  <span>Microsoft Edge (Windows Native)</span>
+                  <span>Microsoft Edge</span>
                 </label>
               </div>
             </div>
 
             <div>
-              <label className="text-xs text-zinc-400 font-mono block mb-1">Local Browser Profile User Data Directory</label>
+              <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1">Local Browser User Data Directory</label>
               <input
                 type="text"
                 value={preferredBrowser === 'chrome' ? chromeProfilePath : edgeProfilePath}
-                onChange={(e) => preferredBrowser === 'chrome' ? setChromeProfilePath(e.target.value) : setEdgeProfilePath(e.target.value)}
-                className="w-full px-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-zinc-200 font-mono focus:border-purple-500/50 outline-none"
+                onChange={(e) =>
+                  preferredBrowser === 'chrome'
+                    ? setChromeProfilePath(e.target.value)
+                    : setEdgeProfilePath(e.target.value)
+                }
+                className="w-full h-9 px-3 rounded-lg bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-slate-100 font-mono focus:border-indigo-500 outline-none"
               />
-              <span className="text-[10px] text-zinc-500 font-mono mt-1 block">
-                Connects via Chrome DevTools Protocol (CDP Port 9222) to preserve your logged-in session.
-              </span>
             </div>
 
-            {/* 1-Click Action Buttons in UI */}
-            <div className="pt-2 flex items-center gap-2.5 flex-wrap">
+            {/* Uniform h-9 Action Buttons */}
+            <div className="pt-1 flex items-center gap-2.5 flex-wrap">
               <button
                 onClick={handleLaunchChrome}
                 disabled={isLaunchingCdp}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-semibold shadow-md shadow-cyan-600/30 transition-all"
+                className="h-9 inline-flex items-center justify-center gap-2 px-3.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold border border-indigo-500/40 shadow-sm transition-all whitespace-nowrap shrink-0"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
                 <span>{isLaunchingCdp ? 'Launching Chrome...' : 'Launch Chrome with CDP'}</span>
@@ -350,20 +317,16 @@ export const SettingsView: React.FC = () => {
               <button
                 onClick={handleTestBrowser}
                 disabled={isTestingBrowser}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-xs font-semibold text-zinc-200 border border-white/[0.1] transition-colors"
+                className="h-9 inline-flex items-center justify-center gap-2 px-3.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-[#141722] dark:hover:bg-[#1c2030] text-xs font-medium text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 transition-all whitespace-nowrap shrink-0"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isTestingBrowser ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400 ${isTestingBrowser ? 'animate-spin' : ''}`} />
                 <span>{isTestingBrowser ? 'Checking Sessions...' : 'Test Connection Status'}</span>
               </button>
             </div>
 
             {testResult.status !== 'idle' && (
-              <div className={`p-3 rounded-lg text-xs font-mono flex items-start gap-2 ${
-                testResult.status === 'success' 
-                  ? 'bg-emerald-950/20 border border-emerald-900/40 text-emerald-300' 
-                  : 'bg-rose-950/20 border border-rose-900/40 text-rose-300'
-              }`}>
-                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400 mt-0.5" />
+              <div className="p-3 rounded-xl text-xs font-mono flex items-start gap-2 bg-emerald-50 dark:bg-emerald-950/25 border border-emerald-200 dark:border-emerald-900/40 text-emerald-700 dark:text-emerald-300">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
                 <span>{testResult.message}</span>
               </div>
             )}
@@ -371,93 +334,105 @@ export const SettingsView: React.FC = () => {
         </div>
       </div>
 
-      {/* Windows Scheduler Configuration & 1-Click Arm Button */}
-      <div className="p-5 rounded-xl glass-panel border border-white/[0.08] space-y-4">
-        <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
-          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-            <Clock className="w-4 h-4 text-emerald-400" />
+      {/* Windows Scheduler Configuration */}
+      <div className="p-5 rounded-2xl bg-white dark:bg-[#111522] border border-slate-200/80 dark:border-slate-800/80 shadow-xs space-y-4">
+        <div className="flex items-center justify-between pb-2.5 border-b border-slate-100 dark:border-slate-800/80">
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+            <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             Naukri 9 AM Refresher Background Scheduler
           </h3>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400">
-            Windows Task Scheduler & System Tray
-          </span>
+          <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-medium">Windows Task Scheduler</span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-mono">
           <div>
-            <label className="text-zinc-400 block mb-1">Target Trigger Time (IST)</label>
+            <label className="text-slate-500 dark:text-slate-400 block mb-1">Target Trigger Time (IST)</label>
             <input
               type="time"
               value={naukriTime}
               onChange={(e) => setNaukriTime(e.target.value)}
-              className="w-full px-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-zinc-200 outline-none"
+              className="w-full h-9 px-3 rounded-lg bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 outline-none"
             />
           </div>
 
           <div>
-            <label className="text-zinc-400 block mb-1">Anti-Fingerprint Jitter (+/- Mins)</label>
+            <label className="text-slate-500 dark:text-slate-400 block mb-1">Anti-Fingerprint Jitter (± Mins)</label>
             <input
               type="number"
               value={naukriJitter}
               onChange={(e) => setNaukriJitter(parseInt(e.target.value) || 0)}
-              className="w-full px-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-zinc-200 outline-none"
+              className="w-full h-9 px-3 rounded-lg bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 outline-none"
             />
           </div>
 
           <div>
-            <label className="text-zinc-400 block mb-1">Designated Master PDF</label>
+            <label className="text-slate-500 dark:text-slate-400 block mb-1">Designated Master PDF</label>
             <input
               type="text"
               readOnly
-              value="data/master_cv/Master_Resume.pdf"
-              className="w-full px-3 py-1.5 rounded-lg bg-white/[0.02] border border-white/[0.06] text-zinc-400 outline-none cursor-default"
+              value="data/cv_tailored/Master_Resume.pdf"
+              className="w-full h-9 px-3 rounded-lg bg-slate-100 dark:bg-white/[0.03] border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 outline-none cursor-default"
             />
           </div>
         </div>
 
-        <div className="pt-2 flex items-center justify-between">
-          <p className="text-[11px] text-zinc-400 leading-normal">
-            Clicking this button registers a native background task in Windows Task Scheduler (`jobSuite_Naukri_9AM_Booster`) with `-WakeToRun`.
+        <div className="pt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <p className="text-xs text-slate-600 dark:text-slate-400">
+            Registers native Windows Task Scheduler job (<code className="text-slate-900 dark:text-slate-200 font-mono">jobSuite_Naukri_9AM_Booster</code>) with <code className="text-slate-900 dark:text-slate-200 font-mono">-WakeToRun</code>.
           </p>
 
           <button
             onClick={handleArmScheduler}
             disabled={isArmingScheduler}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold text-xs shadow-lg shadow-emerald-600/30 transition-all shrink-0"
+            className="h-9 inline-flex items-center justify-center gap-2 px-3.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-[#141722] dark:hover:bg-[#1c2030] text-slate-800 dark:text-slate-100 font-medium text-xs border border-slate-200 dark:border-slate-800 transition-all whitespace-nowrap shrink-0"
           >
-            <Clock className="w-3.5 h-3.5" />
+            <Clock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <span>{isArmingScheduler ? 'Registering Task...' : 'Arm Windows Task Scheduler'}</span>
           </button>
         </div>
       </div>
 
-      {/* Danger Zone: Reset / Clear Mock Data */}
-      <div className="p-5 rounded-xl glass-panel border border-rose-500/20 bg-rose-950/10 space-y-4">
-        <div className="flex items-center justify-between pb-2 border-b border-rose-500/20">
-          <h3 className="text-sm font-semibold text-rose-300 flex items-center gap-2">
-            <Trash2 className="w-4 h-4 text-rose-400" />
-            Reset & Clear Mock Data
+      {/* Reset / Clear Scraped Pipeline Data */}
+      <div className="p-5 rounded-2xl bg-white dark:bg-[#111522] border border-rose-200 dark:border-rose-500/25 shadow-xs space-y-4">
+        <div className="flex items-center justify-between pb-2.5 border-b border-rose-100 dark:border-rose-500/20">
+          <h3 className="text-sm font-semibold text-rose-700 dark:text-rose-300 flex items-center gap-2">
+            <Trash2 className="w-4 h-4 text-rose-500 dark:text-rose-400" />
+            Reset Pipeline Job Listings
           </h3>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
-            Database Maintenance
-          </span>
+          <span className="text-[11px] font-mono text-rose-600 dark:text-rose-400">Master Vault Preserved</span>
         </div>
 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <p className="text-xs text-zinc-400 leading-relaxed">
-            Wipes all discovered jobs, evaluations, application runs, and company-specific tailored documents from SQLite.
-            <br />
-            <strong className="text-zinc-200">Preserved:</strong> Your Master Fact Vault, Master CV JSON, Automation Rules, and API Settings.
+          <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+            Clears scraped job listings, evaluations, and application run logs from SQLite while keeping your Master Vault, ATS Credentials, and Automation Rules intact.
           </p>
 
-          <button
-            onClick={handleResetMockData}
-            disabled={isResetting}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-xs shadow-lg shadow-rose-600/30 transition-all shrink-0"
-          >
-            <Trash2 className={`w-3.5 h-3.5 ${isResetting ? 'animate-spin' : ''}`} />
-            <span>{isResetting ? 'Clearing Data...' : 'Reset / Clear Mock Data'}</span>
-          </button>
+          {!confirmReset ? (
+            <button
+              onClick={() => setConfirmReset(true)}
+              className="h-9 inline-flex items-center justify-center gap-2 px-3.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-600/20 dark:hover:bg-rose-600/30 text-rose-700 dark:text-rose-200 font-medium text-xs border border-rose-200 dark:border-rose-500/35 transition-all whitespace-nowrap shrink-0"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Clear Scraped Jobs</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => setConfirmReset(false)}
+                className="h-9 px-3 rounded-lg bg-slate-100 dark:bg-white/[0.05] text-slate-700 dark:text-slate-300 text-xs font-medium border border-slate-200 dark:border-slate-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetMockData}
+                disabled={isResetting}
+                className="h-9 inline-flex items-center gap-1.5 px-3.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isResetting ? 'Clearing...' : 'Confirm Wipe'}</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

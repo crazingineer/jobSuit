@@ -1,10 +1,10 @@
 -- jobSuite SQLite Database Schema
 -- Optimized for native Windows performance, career-ops evaluation blocks A-H,
--- Indian & Global recruitment vaults, and persistent Playwright ATS automation.
+-- Indian & Global recruitment vaults, ATS account ledger, and persistent Playwright automation.
 
 PRAGMA foreign_keys = ON;
 
--- 1. Personal Fact Vault (Contact, Indian recruitment CTC & Notice, Global Auth, Standard Q&A)
+-- 1. Personal Fact Vault (Contact, ATS Credentials, Indian recruitment CTC & Notice, Global Auth, Standard Q&A)
 CREATE TABLE IF NOT EXISTS personal_vault (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   full_name TEXT NOT NULL,
@@ -14,6 +14,10 @@ CREATE TABLE IF NOT EXISTS personal_vault (
   linkedin_url TEXT,
   github_url TEXT,
   portfolio_url TEXT,
+  -- ATS Account & Login Automation Credentials
+  ats_email TEXT,
+  ats_password_encrypted TEXT,
+  ats_auth_strategy TEXT DEFAULT 'try_login_then_signup', -- 'try_login_then_signup' | 'copilot_confirm'
   -- Indian Specific Recruitment Fields
   current_ctc_lakhs REAL DEFAULT 0.0,
   expected_ctc_lakhs REAL DEFAULT 0.0,
@@ -42,8 +46,8 @@ CREATE TABLE IF NOT EXISTS master_cv (
   version INTEGER NOT NULL,
   title TEXT NOT NULL,
   is_active INTEGER DEFAULT 1,
-  summary_variants TEXT NOT NULL, -- JSON: { "ai_engineer": "...", "fullstack": "...", "lead": "..." }
-  skills_taxonomy TEXT NOT NULL,  -- JSON: { "languages": [], "frameworks": [], "cloud_devops": [], "databases": [], "specialties": [] }
+  summary_variants TEXT NOT NULL, -- JSON: { "powerPlatform": "...", "dataEngineering": "...", "aiAutomation": "..." }
+  skills_taxonomy TEXT NOT NULL,  -- JSON: { "languages": [], "frameworks": [], "aiLlm": [], "cloudDevops": [] }
   work_experience TEXT NOT NULL,  -- JSON array of { company, role, location, dates, bullets: [{ id, text, metrics, tags }] }
   education TEXT NOT NULL,        -- JSON array of { degree, institution, location, year, description }
   certifications TEXT NOT NULL,   -- JSON array of { title, issuer, year, url }
@@ -53,10 +57,10 @@ CREATE TABLE IF NOT EXISTS master_cv (
   updated_at TEXT NOT NULL
 );
 
--- 3. Job Listings (Discovered across LinkedIn, Naukri, Workday, Greenhouse, etc.)
+-- 3. Job Listings (Discovered across LinkedIn, Naukri, HiringCafe, Workday, Greenhouse, etc.)
 CREATE TABLE IF NOT EXISTS job_listings (
   id TEXT PRIMARY KEY,
-  portal TEXT NOT NULL CHECK(portal IN ('linkedin', 'naukri', 'workday', 'greenhouse', 'lever', 'ashby', 'other')),
+  portal TEXT NOT NULL CHECK(portal IN ('linkedin', 'naukri', 'hiringcafe', 'workday', 'greenhouse', 'lever', 'ashby', 'other')),
   portal_job_id TEXT,
   url TEXT NOT NULL,
   title TEXT NOT NULL,
@@ -72,6 +76,8 @@ CREATE TABLE IF NOT EXISTS job_listings (
   advertised_comp TEXT,
   status TEXT DEFAULT 'discovered' CHECK(status IN ('discovered', 'evaluated', 'tailored', 'queued', 'applied', 'rejected', 'interview', 'skipped')),
   easy_apply INTEGER DEFAULT 0,
+  external_apply_url TEXT,
+  ats_provider TEXT,
   created_at TEXT NOT NULL
 );
 
@@ -175,7 +181,18 @@ CREATE TABLE IF NOT EXISTS dom_selector_cache (
   UNIQUE(domain, field_signature)
 );
 
--- 9. Automation Rules & Safety Limits
+-- 9. ATS Portal Account Ledger (Tracks whether an account exists per tenant domain for Login vs Sign-Up resolution)
+CREATE TABLE IF NOT EXISTS ats_accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  domain TEXT NOT NULL UNIQUE, -- e.g. "mastercard.wd1.myworkdayjobs.com"
+  portal_type TEXT NOT NULL,   -- e.g. "workday", "icims", "smartrecruiters"
+  email_used TEXT NOT NULL,
+  account_status TEXT DEFAULT 'registered' CHECK(account_status IN ('registered', 'verified', 'needs_verification')),
+  last_login_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+-- 10. Automation Rules & Safety Limits
 CREATE TABLE IF NOT EXISTS automation_rules (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   linkedin_daily_limit INTEGER DEFAULT 25,
@@ -192,7 +209,7 @@ CREATE TABLE IF NOT EXISTS automation_rules (
   updated_at TEXT NOT NULL
 );
 
--- 10. System Settings & Secure BYOK Credentials
+-- 11. System Settings & Secure BYOK Credentials
 CREATE TABLE IF NOT EXISTS system_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   llm_provider TEXT DEFAULT 'gemini',

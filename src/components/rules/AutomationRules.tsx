@@ -1,16 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Sliders, 
-  ShieldCheck, 
-  AlertOctagon, 
-  Save, 
-  Plus, 
-  Trash2, 
-  CheckCircle2, 
-  Clock, 
-  Lock,
-  Layers,
-  Sparkles
+import {
+  ShieldCheck,
+  AlertOctagon,
+  Save,
+  CheckCircle2,
+  Layers
 } from 'lucide-react';
 import { clientApi } from '@/lib/api';
 
@@ -21,9 +15,8 @@ export const AutomationRules: React.FC = () => {
   const [delayMax, setDelayMax] = useState(25);
   const [scoreThreshold, setScoreThreshold] = useState(4.0);
 
-  // Platform Toggles: Co-Pilot (pause before submit) vs Auto-Pilot (auto submit)
   const [toggles, setToggles] = useState({
-    linkedin: 'co_pilot', // 'auto_pilot' | 'co_pilot'
+    linkedin: 'co_pilot',
     naukri: 'co_pilot',
     workday: 'co_pilot',
     greenhouse: 'auto_pilot',
@@ -51,7 +44,6 @@ export const AutomationRules: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Load rules on mount
   useEffect(() => {
     async function loadRules() {
       try {
@@ -98,9 +90,7 @@ export const AutomationRules: React.FC = () => {
         toggles
       });
       setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 2500);
-    } catch (e: any) {
-      alert('Error saving rules to SQLite: ' + e.message);
+      setTimeout(() => setSaveSuccess(false), 3000);
     } finally {
       setIsSaving(false);
     }
@@ -122,47 +112,52 @@ export const AutomationRules: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Top Header */}
-      <div className="flex items-center justify-between">
+      {/* Top Header — Uniform h-9 Save Button */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-            Automation Rules & Safety Controls
-            <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20">
-              Anti-Ban Protection Active
-            </span>
+          <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
+            Automation Rules & Anti-Rate-Limit Controls
           </h2>
-          <p className="text-xs text-zinc-400 mt-0.5">
-            Human-Mimicking Jitter • Rate-Limiting Sliders • Company Blacklists • Auto-Pilot vs Co-Pilot Toggles
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            SQLite Pre-Deduplication • Human Delay Jitter • Daily Quotas • Co-Pilot vs. Auto-Pilot Toggles
           </p>
         </div>
 
-        <button
-          onClick={handleSave}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-lg shadow-purple-600/30 transition-all"
-        >
-          <Save className="w-3.5 h-3.5" />
-          <span>{saveSuccess ? 'Rules Persisted!' : 'Save Rules'}</span>
-        </button>
+        <div className="flex items-center gap-2.5">
+          {saveSuccess && (
+            <span className="h-9 px-3 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 text-xs text-emerald-700 dark:text-emerald-300 font-mono inline-flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Rules saved to SQLite</span>
+            </span>
+          )}
+
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="h-9 inline-flex items-center justify-center gap-2 px-3.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs border border-indigo-500/40 shadow-sm transition-all whitespace-nowrap shrink-0"
+          >
+            <Save className="w-3.5 h-3.5" />
+            <span>{isSaving ? 'Saving...' : 'Save Rules'}</span>
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Safety & Rate Limiting Sliders */}
-        <div className="p-5 rounded-xl glass-panel border border-white/[0.08] space-y-5">
-          <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              Human Emulation & Daily Quotas
+        <div className="p-5 rounded-2xl bg-white dark:bg-[#111522] border border-slate-200/80 dark:border-slate-800/80 shadow-xs space-y-5">
+          <div className="flex items-center justify-between pb-2.5 border-b border-slate-100 dark:border-slate-800/80">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              Anti-Ban Quotas & Human Jitter
             </h3>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400">
-              Stealth Active
-            </span>
+            <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-medium">SQLite Pre-Dedup Active</span>
           </div>
 
           {/* LinkedIn Daily Slider */}
           <div className="space-y-2">
             <div className="flex justify-between text-xs">
-              <span className="text-zinc-300 font-medium">LinkedIn Daily Apply Limit</span>
-              <span className="font-mono text-purple-300 font-semibold">{linkedinLimit} applies/day</span>
+              <span className="text-slate-700 dark:text-slate-200 font-medium">LinkedIn Daily Apply Limit</span>
+              <span className="font-mono text-indigo-600 dark:text-indigo-300 font-semibold tabular-nums">{linkedinLimit} applies/day</span>
             </div>
             <input
               type="range"
@@ -170,18 +165,18 @@ export const AutomationRules: React.FC = () => {
               max={50}
               value={linkedinLimit}
               onChange={(e) => setLinkedinLimit(parseInt(e.target.value))}
-              className="w-full accent-purple-500"
+              className="w-full accent-indigo-600"
             />
-            <div className="text-[11px] text-zinc-500 font-mono">
-              Recommended: 20-30 to avoid LinkedIn anti-bot session flags.
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+              Skips Voyager API detail calls for job IDs already indexed in SQLite.
             </div>
           </div>
 
           {/* Naukri Daily Slider */}
           <div className="space-y-2">
             <div className="flex justify-between text-xs">
-              <span className="text-zinc-300 font-medium">Naukri.com Daily Apply Limit</span>
-              <span className="font-mono text-cyan-300 font-semibold">{naukriLimit} applies/day</span>
+              <span className="text-slate-700 dark:text-slate-200 font-medium">Naukri.com Daily Apply Limit</span>
+              <span className="font-mono text-cyan-600 dark:text-cyan-300 font-semibold tabular-nums">{naukriLimit} applies/day</span>
             </div>
             <input
               type="range"
@@ -189,22 +184,22 @@ export const AutomationRules: React.FC = () => {
               max={100}
               value={naukriLimit}
               onChange={(e) => setNaukriLimit(parseInt(e.target.value))}
-              className="w-full accent-cyan-500"
+              className="w-full accent-cyan-600"
             />
-            <div className="text-[11px] text-zinc-500 font-mono">
-              Naukri accounts can safely absorb 40-60 applications daily.
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+              Pre-deduplicates data-job-id before opening secondary JD tabs.
             </div>
           </div>
 
           {/* Random Delay Slider */}
-          <div className="space-y-2 pt-2 border-t border-white/[0.06]">
+          <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
             <div className="flex justify-between text-xs">
-              <span className="text-zinc-300 font-medium">Random Human Jitter Between Actions</span>
-              <span className="font-mono text-amber-300 font-semibold">{delayMin}s – {delayMax}s</span>
+              <span className="text-slate-700 dark:text-slate-200 font-medium">Randomized Human Jitter Between Actions</span>
+              <span className="font-mono text-amber-600 dark:text-amber-300 font-semibold tabular-nums">{delayMin}s – {delayMax}s</span>
             </div>
             <div className="flex items-center gap-4">
               <div className="flex-1">
-                <span className="text-[10px] text-zinc-400 font-mono block">Min Delay ({delayMin}s)</span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Min Delay ({delayMin}s)</span>
                 <input
                   type="range"
                   min={3}
@@ -215,7 +210,7 @@ export const AutomationRules: React.FC = () => {
                 />
               </div>
               <div className="flex-1">
-                <span className="text-[10px] text-zinc-400 font-mono block">Max Delay ({delayMax}s)</span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono block">Max Delay ({delayMax}s)</span>
                 <input
                   type="range"
                   min={16}
@@ -229,10 +224,10 @@ export const AutomationRules: React.FC = () => {
           </div>
 
           {/* Score Threshold */}
-          <div className="space-y-2 pt-2 border-t border-white/[0.06]">
+          <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
             <div className="flex justify-between text-xs">
-              <span className="text-zinc-300 font-medium">Auto-Filter career-ops Score Gate</span>
-              <span className="font-mono text-purple-300 font-bold">&gt;= {scoreThreshold.toFixed(1)} / 5.0</span>
+              <span className="text-slate-700 dark:text-slate-200 font-medium">Auto-Queue career-ops Score Gate</span>
+              <span className="font-mono text-indigo-600 dark:text-indigo-300 font-bold tabular-nums">≥ {scoreThreshold.toFixed(1)} / 5.0</span>
             </div>
             <input
               type="range"
@@ -241,58 +236,61 @@ export const AutomationRules: React.FC = () => {
               step={0.1}
               value={scoreThreshold}
               onChange={(e) => setScoreThreshold(parseFloat(e.target.value))}
-              className="w-full accent-purple-500"
+              className="w-full accent-indigo-600"
             />
-            <div className="text-[11px] text-zinc-500 font-mono">
-              Jobs scoring below {scoreThreshold.toFixed(1)} are automatically archived to protect focus.
-            </div>
           </div>
         </div>
 
         {/* Platform Execution Modes: Co-Pilot vs Auto-Pilot */}
-        <div className="p-5 rounded-xl glass-panel border border-white/[0.08] space-y-4">
-          <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-              <Layers className="w-4 h-4 text-purple-400" />
-              Platform Execution Modes
+        <div className="p-5 rounded-2xl bg-white dark:bg-[#111522] border border-slate-200/80 dark:border-slate-800/80 shadow-xs space-y-4">
+          <div className="flex items-center justify-between pb-2.5 border-b border-slate-100 dark:border-slate-800/80">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+              <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              Platform Execution Modes & CAPTCHA Handling
             </h3>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/10 text-purple-300">
-              Co-Pilot vs Auto-Pilot
-            </span>
+            <span className="text-[11px] font-mono text-indigo-600 dark:text-indigo-300 font-medium">Co-Pilot vs Auto-Pilot</span>
           </div>
 
-          <p className="text-xs text-zinc-400">
-            <span className="text-purple-300 font-semibold">Co-Pilot:</span> Playwright fills all fields, uploads tailored CV, and pauses on final step for your 1-click review.<br />
-            <span className="text-emerald-300 font-semibold">Auto-Pilot:</span> Automatically fills and submits applications unattended.
+          <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+            <strong className="text-indigo-600 dark:text-indigo-300">Co-Pilot:</strong> Fills all fields, resolves ATS login/signup, attaches tailored PDF, and pauses if a CAPTCHA challenge or final submit review appears.<br />
+            <strong className="text-emerald-600 dark:text-emerald-300">Auto-Pilot:</strong> Submits verified single-page forms unattended.
           </p>
 
-          <div className="space-y-3 pt-2">
+          <div className="space-y-2.5 pt-1">
             {[
-              { id: 'linkedin', label: 'LinkedIn Easy Apply', desc: 'Modal traversal, custom question filling' },
+              { id: 'linkedin', label: 'LinkedIn (External ATS ↗ & Easy Apply ⚡)', desc: 'Pivots normal jobs to employer ATS; onsite modal only when verified' },
               { id: 'naukri', label: 'Naukri.com 1-Click & Drawer', desc: 'Chatbot drawer questionnaire & notice period' },
-              { id: 'workday', label: 'Workday Enterprise ATS', desc: 'Multi-page account login & dynamic work history' },
-              { id: 'greenhouse', label: 'Greenhouse.io', desc: 'Form field injection & PDF upload' },
+              { id: 'workday', label: 'Workday Enterprise ATS', desc: 'SQLite ats_accounts login/signup & dynamic work history' },
+              { id: 'greenhouse', label: 'Greenhouse.io (Direct Public ATS)', desc: 'Zero-login native HTML form auto-fill & PDF upload' },
               { id: 'lever', label: 'Lever.co', desc: 'Auto-fill resume & custom Q&A' },
-              { id: 'ashby', label: 'AshbyHQ', desc: 'Embed iframe and direct form submission' }
+              { id: 'ashby', label: 'AshbyHQ', desc: 'Direct ATS form submission' }
             ].map((p) => {
               const currentMode = (toggles as any)[p.id] || 'co_pilot';
               return (
-                <div key={p.id} className="p-2.5 rounded-lg bg-black/30 border border-white/[0.04] flex items-center justify-between">
+                <div key={p.id} className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#141722] border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3">
                   <div>
-                    <div className="text-xs font-semibold text-zinc-200">{p.label}</div>
-                    <div className="text-[10px] text-zinc-400 font-mono">{p.desc}</div>
+                    <div className="text-xs font-semibold text-slate-900 dark:text-slate-100">{p.label}</div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">{p.desc}</div>
                   </div>
 
-                  <div className="flex items-center gap-1 bg-white/[0.04] p-0.5 rounded-lg border border-white/[0.06] text-[11px] font-mono">
+                  <div className="h-8 inline-flex items-center gap-1 bg-white dark:bg-black/40 p-1 rounded-lg border border-slate-200 dark:border-slate-800 text-[11px] font-mono shrink-0">
                     <button
                       onClick={() => setToggles({ ...toggles, [p.id]: 'co_pilot' })}
-                      className={`px-2.5 py-1 rounded ${currentMode === 'co_pilot' ? 'bg-purple-600 text-white font-medium' : 'text-zinc-400 hover:text-zinc-200'}`}
+                      className={`h-6 px-2.5 rounded transition-colors ${
+                        currentMode === 'co_pilot'
+                          ? 'bg-indigo-600 text-white font-medium'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                      }`}
                     >
                       Co-Pilot
                     </button>
                     <button
                       onClick={() => setToggles({ ...toggles, [p.id]: 'auto_pilot' })}
-                      className={`px-2.5 py-1 rounded ${currentMode === 'auto_pilot' ? 'bg-emerald-600 text-white font-medium' : 'text-zinc-400 hover:text-zinc-200'}`}
+                      className={`h-6 px-2.5 rounded transition-colors ${
+                        currentMode === 'auto_pilot'
+                          ? 'bg-emerald-600 text-white font-medium'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                      }`}
                     >
                       Auto-Pilot
                     </button>
@@ -307,39 +305,39 @@ export const AutomationRules: React.FC = () => {
       {/* Blacklists Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Company Blacklist */}
-        <div className="p-5 rounded-xl glass-panel border border-white/[0.08] space-y-3">
-          <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-              <AlertOctagon className="w-4 h-4 text-rose-400" />
+        <div className="p-5 rounded-2xl bg-white dark:bg-[#111522] border border-slate-200/80 dark:border-slate-800/80 shadow-xs space-y-3.5">
+          <div className="flex items-center justify-between pb-2.5 border-b border-slate-100 dark:border-slate-800/80">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+              <AlertOctagon className="w-4 h-4 text-rose-500 dark:text-rose-400" />
               Company Blacklist
             </h3>
-            <span className="text-[10px] font-mono text-zinc-400">{blacklistedCompanies.length} blocked</span>
+            <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">{blacklistedCompanies.length} blocked</span>
           </div>
 
           <div className="flex items-center gap-2">
             <input
               type="text"
-              placeholder="Add company name or staffing agency to block..."
+              placeholder="Add company name or agency to block..."
               value={newCompany}
               onChange={(e) => setNewCompany(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && addCompany()}
-              className="flex-1 px-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-zinc-200 focus:border-purple-500/50 outline-none"
+              className="flex-1 h-9 px-3 rounded-lg bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:border-indigo-500 outline-none"
             />
             <button
               onClick={addCompany}
-              className="px-3 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] text-xs font-medium text-zinc-200 border border-white/[0.08]"
+              className="h-9 px-3.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-[#141722] dark:hover:bg-[#1c2030] text-xs font-medium text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 shrink-0"
             >
-              Add
+              Add Company
             </button>
           </div>
 
           <div className="flex flex-wrap gap-1.5 pt-1">
             {blacklistedCompanies.map((c, idx) => (
-              <span key={idx} className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-rose-950/20 border border-rose-900/30 text-rose-300 text-xs font-mono">
+              <span key={idx} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-rose-50 dark:bg-rose-950/25 border border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-300 text-xs font-mono">
                 <span>{c}</span>
                 <button
                   onClick={() => setBlacklistedCompanies(blacklistedCompanies.filter((_, i) => i !== idx))}
-                  className="hover:text-white"
+                  className="hover:text-rose-950 dark:hover:text-white"
                 >
                   ×
                 </button>
@@ -349,13 +347,13 @@ export const AutomationRules: React.FC = () => {
         </div>
 
         {/* Keyword Blacklist */}
-        <div className="p-5 rounded-xl glass-panel border border-white/[0.08] space-y-3">
-          <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
-            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-              <AlertOctagon className="w-4 h-4 text-amber-400" />
+        <div className="p-5 rounded-2xl bg-white dark:bg-[#111522] border border-slate-200/80 dark:border-slate-800/80 shadow-xs space-y-3.5">
+          <div className="flex items-center justify-between pb-2.5 border-b border-slate-100 dark:border-slate-800/80">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+              <AlertOctagon className="w-4 h-4 text-amber-500 dark:text-amber-400" />
               JD Keyword Blacklist
             </h3>
-            <span className="text-[10px] font-mono text-zinc-400">{blacklistedKeywords.length} blocked</span>
+            <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">{blacklistedKeywords.length} blocked</span>
           </div>
 
           <div className="flex items-center gap-2">
@@ -365,23 +363,23 @@ export const AutomationRules: React.FC = () => {
               value={newKeyword}
               onChange={(e) => setNewKeyword(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && addKeyword()}
-              className="flex-1 px-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-zinc-200 focus:border-purple-500/50 outline-none"
+              className="flex-1 h-9 px-3 rounded-lg bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-slate-100 focus:border-indigo-500 outline-none"
             />
             <button
               onClick={addKeyword}
-              className="px-3 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] text-xs font-medium text-zinc-200 border border-white/[0.08]"
+              className="h-9 px-3.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-[#141722] dark:hover:bg-[#1c2030] text-xs font-medium text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-800 shrink-0"
             >
-              Add
+              Add Keyword
             </button>
           </div>
 
           <div className="flex flex-wrap gap-1.5 pt-1">
             {blacklistedKeywords.map((k, idx) => (
-              <span key={idx} className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-950/20 border border-amber-900/30 text-amber-300 text-xs font-mono">
+              <span key={idx} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-50 dark:bg-amber-950/25 border border-amber-200 dark:border-amber-900/40 text-amber-700 dark:text-amber-300 text-xs font-mono">
                 <span>{k}</span>
                 <button
                   onClick={() => setBlacklistedKeywords(blacklistedKeywords.filter((_, i) => i !== idx))}
-                  className="hover:text-white"
+                  className="hover:text-amber-950 dark:hover:text-white"
                 >
                   ×
                 </button>

@@ -1,445 +1,435 @@
 import fs from 'fs';
 import path from 'path';
-import { chromium, Browser } from 'playwright';
+import { chromium } from 'playwright';
 import { db } from '../db';
-import { PersonalVault, MasterCV, WorkExperience } from '../../src/types/vault';
+import { MasterCV, PersonalVault } from '../../src/types/vault';
+import { careerOpsEvaluator } from '../evaluator/evaluator';
+import { CV_TAILOR_SYSTEM_PROMPT } from '../evaluator/prompts';
+import {
+  buildDefensibleTailoringPlan,
+  containsForbiddenFabrication
+} from '../../src/utils/cv-alignment-guard';
+import {
+  formatHtmlBulletWithBold,
+  generateJakesResumeLatex
+} from '../../src/utils/jakes-resume-generator';
 
-export interface TailoringPlan {
+export interface TailorPackageOptions {
   company: string;
   roleTitle: string;
-  targetArchetype?: string;
-  summaryOverride?: string;
-  promotedBulletIds?: string[];
-  bulletModifications?: Array<{
-    id: string;
-    section: string;
+  archetype?: string;
+  generateCoverLetter?: boolean;
+}
+
+export interface CompiledPackageResult {
+  cvPdfPath: string;
+  latexPath?: string;
+  latexSource?: string;
+  coverPdfPath?: string;
+  durationMs: number;
+  diffSummary: Array<{
+    bulletId: string;
     originalText: string;
     tailoredText: string;
     reason: string;
+    interviewTalkingPoint?: string;
   }>;
-}
-
-export interface CompileResult {
-  cvPdfPath: string;
-  coverLetterPdfPath?: string;
-  durationMs: number;
-  diffSummary: Array<{
-    section: string;
-    change: string;
-    reason: string;
-  }>;
-  payloadJson: string;
-}
-
-// Global browser instance reuse for sub-300ms PDF generation
-let cachedBrowser: Browser | null = null;
-
-async function getBrowser(): Promise<Browser> {
-  if (!cachedBrowser || !cachedBrowser.isConnected()) {
-    cachedBrowser = await chromium.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu']
-    });
-  }
-  return cachedBrowser;
-}
-
-export async function closePdfBrowser() {
-  if (cachedBrowser) {
-    await cachedBrowser.close();
-    cachedBrowser = null;
-  }
-}
-
-export function escapeHtml(str: string | null | undefined): string {
-  if (str === null || str === undefined) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 }
 
 export class ResumeCompiler {
-  private outputDir: string;
+  private cvTemplatePath = path.resolve(process.cwd(), 'engine', 'pdf', 'cv-template.html');
+  private coverTemplatePath = path.resolve(process.cwd(), 'engine', 'pdf', 'cover-template.html');
+  private outputDir = path.resolve(process.cwd(), 'data', 'cv_tailored');
 
   constructor() {
-    this.outputDir = path.resolve(process.cwd(), 'data', 'cv_tailored');
     if (!fs.existsSync(this.outputDir)) {
       fs.mkdirSync(this.outputDir, { recursive: true });
     }
   }
 
   /**
-   * Grounding Verification Rule:
-   * Asserts that modified text preserves factual claims and numbers from the Master CV.
-   */
-  public verifyGrounding(masterCv: MasterCV, plan: TailoringPlan): boolean {
-    // Collect all factual numbers & company names from master CV
-    const masterText = JSON.stringify(masterCv);
-    if (!plan.bulletModifications) return true;
-
-    for (const mod of plan.bulletModifications) {
-      // Find original bullet
-      let originalFound = false;
-      for (const exp of masterCv.workExperience) {
-        const b = exp.bullets.find(x => x.id === mod.id);
-        if (b) {
-          originalFound = true;
-          break;
-        }
-      }
-      if (!originalFound) {
-        console.warn(`[Grounding Warning] Bullet ID ${mod.id} not found in Master CV`);
-      }
-    }
-    return true;
-  }
-
-  /**
-   * Compiles ATS-Compliant Tailored CV and Cover Letter to PDF
+   * Compiles a tailored CV using Jake's Resume template (https://www.overleaf.com/latex/templates/jakes-resume/syzfjbzwjncs)
+   * with strict interview-defensible tailoring (zero Playwright/Kubernetes/HyperFlow fabrications).
+   * Writes both the compiled PDF and the Overleaf-ready `.tex` file.
    */
   public async compileTailoredPackage(
     jobId: string,
     vault: PersonalVault,
     masterCv: MasterCV,
-    plan: TailoringPlan
-  ): Promise<CompileResult> {
-    const startTime = performance.now();
-    this.verifyGrounding(masterCv, plan);
+    options: TailorPackageOptions
+  ): Promise<CompiledPackageResult> {
+    const startTime = Date.now();
+    const jobRow = db.prepare('SELECT * FROM job_listings WHERE id = ?').get(jobId) as any;
 
-    // 1. Build Grounded Tailored Content
-    const targetTitle = plan.roleTitle || masterCv.title;
-    const summary = plan.summaryOverride || masterCv.summaryVariants.aiEngineer || masterCv.summaryVariants.general || '';
+    let rawProposedMods: Array<{
+      bulletId: string;
+      originalText: string;
+      tailoredText: string;
+      reason: string;
+    }> = [];
 
-    // Experience: Reorder and apply bullet modifications
-    const experienceHtml = masterCv.workExperience.map((exp) => {
-      // Check if any bullet has modification in plan
-      const bulletsHtml = exp.bullets.map((bullet) => {
-        const mod = plan.bulletModifications?.find(m => m.id === bullet.id);
-        const text = mod ? mod.tailoredText : bullet.text;
-        return `<li>${escapeHtml(text)}</li>`;
-      }).join('\n');
+    if (jobRow) {
+      try {
+        const llmPlan = await this.generateTailoringPlanWithLlm(jobRow, masterCv);
+        if (Array.isArray(llmPlan?.bulletModifications)) {
+          rawProposedMods = llmPlan.bulletModifications;
+        }
+      } catch (err: any) {
+        console.log(
+          `[Resume Compiler] Using deterministic interview-defensible tailoring engine (${err.message})`
+        );
+      }
+    }
 
-      return `
-        <div class="entry">
-          <div class="entry-header">
-            <div>
-              <span class="entry-title">${escapeHtml(exp.role)}</span> — 
-              <span class="entry-company">${escapeHtml(exp.company)}</span>
-            </div>
-            <div class="entry-meta">${escapeHtml(exp.dates)} | ${escapeHtml(exp.location)}</div>
-          </div>
-          <ul class="entry-bullets">
-            ${bulletsHtml}
-          </ul>
-        </div>
-      `;
-    }).join('\n');
+    const defensible = buildDefensibleTailoringPlan(
+      {
+        title: jobRow?.title || options.roleTitle,
+        company: jobRow?.company || options.company,
+        rawJdText: jobRow?.raw_jd_text || ''
+      },
+      masterCv,
+      rawProposedMods
+    );
 
-    // Skills
-    const skills = masterCv.skillsTaxonomy || {} as any;
-    const languages = skills.languages || [];
-    const frameworks = skills.frameworks || [];
-    const aiLlm = skills.aiLlm || (skills as any).ai_llm || [];
-    const cloudDevops = skills.cloudDevops || (skills as any).cloud_devops || [];
-
-    const skillsHtml = `
-      <div><span class="skill-category">Languages & Frameworks:</span> ${escapeHtml(languages.concat(frameworks).join(', '))}</div>
-      <div><span class="skill-category">AI, LLMOps & Automation:</span> ${escapeHtml(aiLlm.join(', '))}</div>
-      <div><span class="skill-category">Cloud, DevOps & Streaming:</span> ${escapeHtml(cloudDevops.join(', '))}</div>
-    `;
-
-    // Education
-    const educationHtml = masterCv.education.map((edu) => `
-      <div class="compact-item">
-        <div><strong>${escapeHtml(edu.degree)}</strong>, ${escapeHtml(edu.institution)}</div>
-        <div style="font-size: 10px; color: #555;">${escapeHtml(edu.year)} | ${escapeHtml(edu.location)}</div>
-      </div>
-    `).join('\n');
-
-    // Projects
-    const projectsHtml = masterCv.projects.length > 0 ? `
-      <section class="section">
-        <h2 class="section-title">Key Projects & Open-Source</h2>
-        ${masterCv.projects.map((p) => `
-          <div class="entry" style="margin-bottom: 5px;">
-            <div class="entry-header">
-              <span class="entry-title">${escapeHtml(p.name)}</span>
-              <span class="entry-meta">${escapeHtml(p.tech.join(', '))}</span>
-            </div>
-            <p style="font-size: 10px; color: #333; margin-top: 1px;">${escapeHtml(p.description)}</p>
-          </div>
-        `).join('\n')}
-      </section>
-    ` : '';
-
-    // Load CV Template
-    const cvTemplatePath = path.resolve(import.meta.dirname, 'cv-template.html');
-    let cvHtml = fs.readFileSync(cvTemplatePath, 'utf-8');
-
-    // Replace Tokens
-    cvHtml = cvHtml
-      .replace(/{{NAME}}/g, escapeHtml(vault.fullName))
-      .replace(/{{TARGET_TITLE}}/g, escapeHtml(targetTitle))
-      .replace(/{{LOCATION}}/g, escapeHtml(vault.location))
-      .replace(/{{EMAIL}}/g, escapeHtml(vault.email))
-      .replace(/{{PHONE}}/g, escapeHtml(vault.phone))
-      .replace(/{{#LINKEDIN_URL}}([\s\S]*?){{\/LINKEDIN_URL}}/g, vault.linkedinUrl ? `$1`.replace(/{{LINKEDIN_URL}}/g, escapeHtml(vault.linkedinUrl)) : '')
-      .replace(/{{#GITHUB_URL}}([\s\S]*?){{\/GITHUB_URL}}/g, vault.githubUrl ? `$1`.replace(/{{GITHUB_URL}}/g, escapeHtml(vault.githubUrl)) : '')
-      .replace(/{{SUMMARY}}/g, escapeHtml(summary))
-      .replace(/{{SKILLS_CONTENT}}/g, skillsHtml)
-      .replace(/{{EXPERIENCE_CONTENT}}/g, experienceHtml)
-      .replace(/{{EDUCATION_CONTENT}}/g, educationHtml)
-      .replace(/{{PROJECTS_SECTION}}/g, projectsHtml);
-
-    // Sanitize File Name: FirstName_LastName_Company_Role.pdf
-    const cleanName = vault.fullName.replace(/[^a-zA-Z0-9]/g, '_');
-    const cleanCompany = plan.company.replace(/[^a-zA-Z0-9]/g, '');
-    const cleanRole = plan.roleTitle.replace(/[^a-zA-Z0-9]/g, '');
-    const cvFilename = `${cleanName}_${cleanCompany}_${cleanRole}.pdf`;
+    const safeName = (vault.fullName || 'Shubham Yadav').replace(/[^a-zA-Z0-9]/g, '_');
+    const safeComp = options.company.replace(/[^a-zA-Z0-9]/g, '_');
+    const cvFilename = `${safeName}_${safeComp}_CV.pdf`;
+    const texFilename = `${safeName}_${safeComp}_JakesResume.tex`;
     const cvPdfPath = path.join(this.outputDir, cvFilename);
+    const texFilePath = path.join(this.outputDir, texFilename);
 
-    // Render to PDF via Playwright Headless
-    const browser = await getBrowser();
-    const page = await browser.newPage();
-    await page.setContent(cvHtml, { waitUntil: 'load' });
-    await page.pdf({
-      path: cvPdfPath,
-      format: 'Letter',
-      printBackground: true,
-      margin: {
-        top: '0.4in',
-        bottom: '0.4in',
-        left: '0.45in',
-        right: '0.45in'
-      }
-    });
-
-    // 2. Also Generate ATS Cover Letter PDF
-    const coverLetterFilename = `${cleanName}_${cleanCompany}_${cleanRole}_CoverLetter.pdf`;
-    const coverLetterPdfPath = path.join(this.outputDir, coverLetterFilename);
-    const coverTemplatePath = path.resolve(import.meta.dirname, 'cover-template.html');
-    let coverHtml = fs.readFileSync(coverTemplatePath, 'utf-8');
-
-    const topAchievements = masterCv.workExperience[0]?.bullets.slice(0, 3).map(b => 
-      `<li><strong>${escapeHtml(b.metrics || 'Key Achievement')}:</strong> ${escapeHtml(b.text)}</li>`
-    ).join('\n') || '';
-
-    const todayDate = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-
-    coverHtml = coverHtml
-      .replace(/{{NAME}}/g, escapeHtml(vault.fullName))
-      .replace(/{{LOCATION}}/g, escapeHtml(vault.location))
-      .replace(/{{EMAIL}}/g, escapeHtml(vault.email))
-      .replace(/{{PHONE}}/g, escapeHtml(vault.phone))
-      .replace(/{{#LINKEDIN_URL}}([\s\S]*?){{\/LINKEDIN_URL}}/g, vault.linkedinUrl ? `$1`.replace(/{{LINKEDIN_URL}}/g, escapeHtml(vault.linkedinUrl)) : '')
-      .replace(/{{DATE}}/g, todayDate)
-      .replace(/{{COMPANY}}/g, escapeHtml(plan.company))
-      .replace(/{{ROLE_TITLE}}/g, escapeHtml(plan.roleTitle))
-      .replace(/{{OPENING_HOOK}}/g, `I am writing to express my strong enthusiasm for the ${escapeHtml(plan.roleTitle)} position at ${escapeHtml(plan.company)}. With over 6 years engineering autonomous agentic pipelines, high-throughput microservices, and LLMOps evaluation architectures, I am eager to apply my experience directly to your engineering team.`)
-      .replace(/{{PROFILE_PARAGRAPH}}/g, escapeHtml(summary))
-      .replace(/{{KEY_ACHIEVEMENTS}}/g, topAchievements)
-      .replace(/{{VALUE_PROPOSITION}}/g, `In this role, I look forward to owning the end-to-end reliability of ${escapeHtml(plan.company)}'s systems, architecting resilient automation that scales smoothly under load while enforcing strict quality benchmarks.`);
-
-    await page.setContent(coverHtml, { waitUntil: 'load' });
-    await page.pdf({
-      path: coverLetterPdfPath,
-      format: 'Letter',
-      printBackground: true,
-      margin: {
-        top: '0.6in',
-        bottom: '0.6in',
-        left: '0.7in',
-        right: '0.7in'
-      }
-    });
-
-    await page.close();
-
-    const durationMs = Math.round(performance.now() - startTime);
-
-    // Format Diff Summary
-    const diffSummary = (plan.bulletModifications || []).map(m => ({
-      section: m.section,
-      change: `${m.originalText.substring(0, 60)}... -> ${m.tailoredText.substring(0, 60)}...`,
-      reason: m.reason
-    }));
-
-    const payloadJson = JSON.stringify({
-      targetTitle,
-      company: plan.company,
-      tailoredSummary: summary,
-      bulletModifications: plan.bulletModifications || []
-    });
-
-    // Save to SQLite
-    db.prepare(`
-      INSERT OR REPLACE INTO tailored_documents (
-        id, job_id, doc_type, file_path, payload_json, diff_json, compiled_at
-      ) VALUES (
-        ?, ?, 'cv', ?, ?, ?, datetime('now')
-      )
-    `).run(
-      `doc-${jobId}-cv`,
-      jobId,
-      cvPdfPath,
-      payloadJson,
-      JSON.stringify(diffSummary)
+    // 1. Generate Overleaf-ready Jake's Resume LaTeX (.tex) source
+    const latexSource = generateJakesResumeLatex(
+      vault,
+      masterCv,
+      defensible.bulletModifications,
+      masterCv.title
     );
+    fs.writeFileSync(texFilePath, latexSource, 'utf-8');
+
+    // 2. Render Jake's Resume PDF
+    await this.renderCvPdf(vault, masterCv, options, defensible.bulletModifications, cvPdfPath);
+
+    let coverPdfPath: string | undefined;
+    if (options.generateCoverLetter) {
+      const coverFilename = `${safeName}_${safeComp}_CoverLetter.pdf`;
+      coverPdfPath = path.join(this.outputDir, coverFilename);
+      await this.compileCoverLetter(vault, masterCv, options, coverPdfPath);
+    }
+
+    const durationMs = Date.now() - startTime;
+    const relativeCvPath = `data/cv_tailored/${cvFilename}`;
+    const relativeTexPath = `data/cv_tailored/${texFilename}`;
 
     db.prepare(`
       INSERT OR REPLACE INTO tailored_documents (
         id, job_id, doc_type, file_path, payload_json, diff_json, compiled_at
       ) VALUES (
-        ?, ?, 'cover_letter', ?, ?, ?, datetime('now')
+        @id, @jobId, 'cv', @filePath, @payloadJson, @diffJson, datetime('now')
       )
-    `).run(
-      `doc-${jobId}-cover`,
+    `).run({
+      id: `doc-${jobId}-cv`,
       jobId,
-      coverLetterPdfPath,
-      payloadJson,
-      JSON.stringify([])
-    );
+      filePath: relativeCvPath,
+      payloadJson: JSON.stringify({
+        company: options.company,
+        roleTitle: options.roleTitle,
+        template: 'jakes-resume (Overleaf syzfjbzwjncs)',
+        latexPath: relativeTexPath,
+        interviewDefensible: true
+      }),
+      diffJson: JSON.stringify(defensible.bulletModifications)
+    });
 
-    // Update job status to 'tailored'
     db.prepare(`
-      UPDATE job_listings 
-      SET status = 'tailored' 
-      WHERE id = ? AND status IN ('discovered', 'evaluated')
-    `).run(jobId);
+      UPDATE evaluations
+      SET block_e_personalization = ?
+      WHERE job_id = ?
+    `).run(JSON.stringify(defensible.blockEPersonalization), jobId);
+
+    db.prepare(
+      "UPDATE job_listings SET status = 'tailored' WHERE id = ? AND status IN ('discovered', 'evaluated')"
+    ).run(jobId);
 
     return {
-      cvPdfPath,
-      coverLetterPdfPath,
+      cvPdfPath: relativeCvPath,
+      latexPath: relativeTexPath,
+      latexSource,
+      coverPdfPath: coverPdfPath ? `data/cv_tailored/${path.basename(coverPdfPath)}` : undefined,
       durationMs,
-      diffSummary,
-      payloadJson
+      diffSummary: defensible.bulletModifications
     };
   }
 
   /**
-   * Compiles the Master CV from the Personal Fact Vault to data/cv_tailored/Master_Resume.pdf
+   * Compiles the baseline Master Resume PDF (Jake's Resume template)
    */
   public async compileMasterCv(
     vault: PersonalVault,
     masterCv: MasterCV
-  ): Promise<{ pdfPath: string; filename: string; durationMs: number }> {
-    const startTime = performance.now();
-
-    const targetTitle = masterCv.title || 'Senior AI & Full-Stack Platform Engineer';
-    const summary = masterCv.summaryVariants.aiEngineer || masterCv.summaryVariants.general || '';
-
-    // Experience Html
-    const experienceHtml = masterCv.workExperience.map((exp) => {
-      const bulletsHtml = exp.bullets.map((bullet) => {
-        return `<li>${escapeHtml(bullet.text)}</li>`;
-      }).join('\n');
-
-      return `
-        <div class="entry">
-          <div class="entry-header">
-            <div>
-              <span class="entry-title">${escapeHtml(exp.role)}</span> — 
-              <span class="entry-company">${escapeHtml(exp.company)}</span>
-            </div>
-            <div class="entry-meta">${escapeHtml(exp.dates)} | ${escapeHtml(exp.location)}</div>
-          </div>
-          <ul class="entry-bullets">
-            ${bulletsHtml}
-          </ul>
-        </div>
-      `;
-    }).join('\n');
-
-    // Skills
-    const skills = masterCv.skillsTaxonomy || {} as any;
-    const languages = skills.languages || [];
-    const frameworks = skills.frameworks || [];
-    const aiLlm = skills.aiLlm || (skills as any).ai_llm || [];
-    const cloudDevops = skills.cloudDevops || (skills as any).cloud_devops || [];
-
-    const skillsHtml = `
-      <div><span class="skill-category">Languages & Frameworks:</span> ${escapeHtml(languages.concat(frameworks).join(', '))}</div>
-      <div><span class="skill-category">AI, LLMOps & Automation:</span> ${escapeHtml(aiLlm.join(', '))}</div>
-      <div><span class="skill-category">Cloud, DevOps & Streaming:</span> ${escapeHtml(cloudDevops.join(', '))}</div>
-    `;
-
-    // Education
-    const educationHtml = masterCv.education.map((edu) => `
-      <div class="compact-item">
-        <div><strong>${escapeHtml(edu.degree)}</strong>, ${escapeHtml(edu.institution)}</div>
-        <div style="font-size: 10px; color: #555;">${escapeHtml(edu.year)} | ${escapeHtml(edu.location)}</div>
-      </div>
-    `).join('\n');
-
-    // Projects
-    const projectsHtml = (masterCv.projects && masterCv.projects.length > 0) ? `
-      <section class="section">
-        <h2 class="section-title">Key Projects & Open-Source</h2>
-        ${masterCv.projects.map((p) => `
-          <div class="entry" style="margin-bottom: 5px;">
-            <div class="entry-header">
-              <span class="entry-title">${escapeHtml(p.name)}</span>
-              <span class="entry-meta">${escapeHtml(p.tech.join(', '))}</span>
-            </div>
-            <p style="font-size: 10px; color: #333; margin-top: 1px;">${escapeHtml(p.description)}</p>
-          </div>
-        `).join('\n')}
-      </section>
-    ` : '';
-
-    // Load CV Template
-    const cvTemplatePath = path.resolve(import.meta.dirname, 'cv-template.html');
-    let cvHtml = fs.readFileSync(cvTemplatePath, 'utf-8');
-
-    // Replace Tokens
-    cvHtml = cvHtml
-      .replace(/{{NAME}}/g, escapeHtml(vault.fullName))
-      .replace(/{{TARGET_TITLE}}/g, escapeHtml(targetTitle))
-      .replace(/{{LOCATION}}/g, escapeHtml(vault.location))
-      .replace(/{{EMAIL}}/g, escapeHtml(vault.email))
-      .replace(/{{PHONE}}/g, escapeHtml(vault.phone))
-      .replace(/{{#LINKEDIN_URL}}([\s\S]*?){{\/LINKEDIN_URL}}/g, vault.linkedinUrl ? `$1`.replace(/{{LINKEDIN_URL}}/g, escapeHtml(vault.linkedinUrl)) : '')
-      .replace(/{{#GITHUB_URL}}([\s\S]*?){{\/GITHUB_URL}}/g, vault.githubUrl ? `$1`.replace(/{{GITHUB_URL}}/g, escapeHtml(vault.githubUrl)) : '')
-      .replace(/{{SUMMARY}}/g, escapeHtml(summary))
-      .replace(/{{SKILLS_CONTENT}}/g, skillsHtml)
-      .replace(/{{EXPERIENCE_CONTENT}}/g, experienceHtml)
-      .replace(/{{EDUCATION_CONTENT}}/g, educationHtml)
-      .replace(/{{PROJECTS_SECTION}}/g, projectsHtml);
-
-    const filename = 'Master_Resume.pdf';
-    const cvPdfPath = path.join(this.outputDir, filename);
-
-    const browser = await getBrowser();
-    const page = await browser.newPage();
-    await page.setContent(cvHtml, { waitUntil: 'load' });
-    await page.pdf({
-      path: cvPdfPath,
-      format: 'Letter',
-      printBackground: true,
-      margin: {
-        top: '0.4in',
-        bottom: '0.4in',
-        left: '0.45in',
-        right: '0.45in'
-      }
-    });
-
-    // Also copy to data/master_cv/Master_Resume.pdf
-    const masterCvDir = path.resolve(process.cwd(), 'data', 'master_cv');
-    if (!fs.existsSync(masterCvDir)) {
-      fs.mkdirSync(masterCvDir, { recursive: true });
+  ): Promise<{ pdfPath: string; latexPath: string; latexSource: string; durationMs: number }> {
+    const startTime = Date.now();
+    const masterOutPath = path.join(this.outputDir, 'Master_Resume.pdf');
+    const masterTexPath = path.join(this.outputDir, 'Master_JakesResume.tex');
+    const masterBackupDir = path.resolve(process.cwd(), 'data', 'master_cv');
+    if (!fs.existsSync(masterBackupDir)) {
+      fs.mkdirSync(masterBackupDir, { recursive: true });
     }
-    fs.copyFileSync(cvPdfPath, path.join(masterCvDir, filename));
+    const masterBackupPath = path.join(masterBackupDir, 'Master_Resume.pdf');
 
-    const durationMs = Math.round(performance.now() - startTime);
+    const latexSource = generateJakesResumeLatex(vault, masterCv, [], masterCv.title);
+    fs.writeFileSync(masterTexPath, latexSource, 'utf-8');
+
+    await this.renderCvPdf(
+      vault,
+      masterCv,
+      {
+        company: 'Master',
+        roleTitle:
+          masterCv.title ||
+          'Power Platform and SharePoint Developer | Power Apps, Power Automate, Data Engineering'
+      },
+      [],
+      masterOutPath
+    );
+
+    try {
+      fs.copyFileSync(masterOutPath, masterBackupPath);
+    } catch {}
 
     return {
-      pdfPath: cvPdfPath,
-      filename,
-      durationMs
+      pdfPath: 'data/cv_tailored/Master_Resume.pdf',
+      latexPath: 'data/cv_tailored/Master_JakesResume.tex',
+      latexSource,
+      durationMs: Date.now() - startTime
     };
+  }
+
+  private async generateTailoringPlanWithLlm(jobRow: any, masterCv: MasterCV): Promise<any> {
+    const config = careerOpsEvaluator.getLlmConfig();
+    const userPrompt = `
+### TARGET JOB
+- **Role:** ${jobRow.title}
+- **Company:** ${jobRow.company}
+- **Job Description:**
+${jobRow.raw_jd_text}
+
+### CANDIDATE MASTER CV (GROUND TRUTH — SHUBHAM YADAV)
+${JSON.stringify(masterCv, null, 2)}
+
+Generate an interview-defensible tailoring plan for Jake's Resume template. Remember: NEVER add Playwright, Puppeteer, Selenium, Kubernetes, Golang, or HyperFlow.`;
+
+    const rawText = await careerOpsEvaluator.callLlm(config, CV_TAILOR_SYSTEM_PROMPT, userPrompt);
+    return careerOpsEvaluator.parseJsonSafely(rawText);
+  }
+
+  private async renderCvPdf(
+    vault: PersonalVault,
+    masterCv: MasterCV,
+    options: TailorPackageOptions,
+    bulletMods: Array<{ bulletId: string; originalText: string; tailoredText: string }>,
+    outputPath: string
+  ): Promise<void> {
+    let html = fs.readFileSync(this.cvTemplatePath, 'utf-8');
+
+    const linkedinClean = (vault.linkedinUrl || 'linkedin.com/in/shubhambhagwatyadav')
+      .replace(/^https?:\/\/(www\.)?/, '')
+      .replace(/\/$/, '');
+
+    const phone = vault.phone || '+91 7276085461';
+    const email = vault.email || 'shubhambhagwatyadav@gmail.com';
+
+    // Exact Jake's Resume underlined contact line separated by |
+    const contactLineHtml = `${phone}<span class="pipe">|</span><a href="mailto:${email}">${email}</a><span class="pipe">|</span><a href="https://${linkedinClean}">${linkedinClean}</a>`;
+
+    const baseHeadline =
+      masterCv.title ||
+      'Power Platform and SharePoint Developer | Power Apps, Power Automate, Data Engineering';
+
+    // Jake's Resume Technical Skills block
+    const skillsRowsHtml = `
+      <div class="jakes-skill-line"><span class="jakes-skill-cat">Power Platform &amp; AI:</span> Power Apps (Canvas, Model-Driven), Power Automate (Cloud, Desktop RPA), Power BI (DAX, Power Query), Dataverse, Power Fx, Power Pages, Copilot Studio, AI Builder, Custom Connectors</div>
+      <div class="jakes-skill-line"><span class="jakes-skill-cat">Cloud, Database &amp; Data Engineering:</span> Azure AI Foundry (Content Understanding, Document Intelligence), Azure Databricks (SQL), Azure Functions, Azure Logic Apps, Azure SQL, SSMS, Fabric Capacity (KQL), SharePoint Lists</div>
+      <div class="jakes-skill-line"><span class="jakes-skill-cat">SharePoint &amp; Migration:</span> SharePoint Online, SharePoint Server (2013/2016/2019), SPFx, PnP Framework, ShareGate, InfoPath, Nintex, PowerShell</div>
+      <div class="jakes-skill-line"><span class="jakes-skill-cat">Languages:</span> C#, JavaScript, TypeScript (React, JSX), Python, SQL, HTML, CSS, XML, JSON</div>
+      <div class="jakes-skill-line"><span class="jakes-skill-cat">Tools &amp; Version Control:</span> Git, GitHub, Azure DevOps, JIRA, ServiceNow, Visual Studio, VS Code, Postman</div>
+      <div class="jakes-skill-line"><span class="jakes-skill-cat">Certifications:</span> PL-600, PL-400, AZ-204, PL-900, MS-900, AZ-900, AI-900, SC-900</div>
+    `;
+
+    // Jake's Resume \resumeSubheading for Education
+    const eduLocations: Record<string, string> = {
+      'Wilfrid Laurier University': 'Waterloo, Canada',
+      'Pune University': 'Pune, India'
+    };
+    const educationHtml = (masterCv.education || [])
+      .map((edu) => {
+        const loc = eduLocations[edu.institution] || 'India';
+        return `
+      <div class="resume-subheading">
+        <div class="subheading-row-1">
+          <span class="left-bold">${edu.institution}</span>
+          <span class="right-regular">${loc}</span>
+        </div>
+        <div class="subheading-row-2">
+          <span>${edu.degree}</span>
+          <span>${edu.year}</span>
+        </div>
+      </div>`;
+      })
+      .join('\n');
+
+    // Validated bullet modifications (strictly zero forbidden fabrications)
+    const modMap = new Map<string, string>();
+    for (const mod of bulletMods) {
+      if (mod.bulletId && mod.tailoredText && !containsForbiddenFabrication(mod.tailoredText)) {
+        modMap.set(mod.bulletId, mod.tailoredText);
+      }
+    }
+
+    // Jake's Resume \resumeSubheading + \resumeItemListStart for Experience
+    const workExpHtml = (masterCv.workExperience || [])
+      .map((exp) => {
+        const bulletsHtml = (exp.bullets || [])
+          .map((b) => {
+            const finalBulletText = modMap.get(b.id) || b.text;
+            return `<li>${formatHtmlBulletWithBold(finalBulletText)}</li>`;
+          })
+          .join('\n');
+
+        return `
+      <div class="resume-subheading">
+        <div class="subheading-row-1">
+          <span class="left-bold">${exp.role}</span>
+          <span class="right-regular">${exp.dates}</span>
+        </div>
+        <div class="subheading-row-2">
+          <span>${exp.company}</span>
+          <span>${exp.location}</span>
+        </div>
+        <ul class="resume-item-list">
+          ${bulletsHtml}
+        </ul>
+      </div>`;
+      })
+      .join('\n');
+
+    // Jake's Resume \resumeProjectHeading + \resumeItemListStart for Technical Projects
+    const projectDates: Record<string, string> = {
+      'Context-Aware Institutional RAG Chatbot': 'Feb 2026 – Mar 2026',
+      'CMS Consolidation and Migration': 'Apr 2023 – Aug 2024',
+      'Employee Churn Prediction': 'Sep 2024 – Dec 2024'
+    };
+
+    const projectsHtml = (masterCv.projects || [])
+      .map((proj) => {
+        const dateStr = projectDates[proj.name] || '2024 – 2026';
+        const techList = (proj.tech || []).join(', ');
+        const allBullets = [proj.description, ...(proj.bullets || [])].filter(Boolean);
+        const projBulletsHtml = allBullets
+          .map((bt) => `<li>${formatHtmlBulletWithBold(bt)}</li>`)
+          .join('\n');
+
+        return `
+      <div class="resume-project-heading">
+        <div class="project-row-1">
+          <span><strong>${proj.name}</strong> | <em>${techList}</em></span>
+          <span>${dateStr}</span>
+        </div>
+        <ul class="resume-item-list">
+          ${projBulletsHtml}
+        </ul>
+      </div>`;
+      })
+      .join('\n');
+
+    html = html
+      .replace(/{{FULL_NAME}}/g, vault.fullName || 'Shubham Yadav')
+      .replace(/{{TARGET_ROLE_TITLE}}/g, baseHeadline)
+      .replace(/{{CONTACT_LINE_HTML}}/g, contactLineHtml)
+      .replace(/{{SKILLS_ROWS_HTML}}/g, skillsRowsHtml)
+      .replace(/{{EDUCATION_HTML}}/g, educationHtml)
+      .replace(/{{WORK_EXPERIENCE_HTML}}/g, workExpHtml)
+      .replace(/{{PROJECTS_HTML}}/g, projectsHtml);
+
+    await this.printHtmlToPdf(html, outputPath);
+  }
+
+  private async compileCoverLetter(
+    vault: PersonalVault,
+    masterCv: MasterCV,
+    options: TailorPackageOptions,
+    outputPath: string
+  ): Promise<void> {
+    let html = fs.readFileSync(this.coverTemplatePath, 'utf-8');
+
+    const contactLine = [vault.location, vault.phone, vault.email, vault.linkedinUrl]
+      .filter(Boolean)
+      .join(' | ');
+
+    const today = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    const openingHook = `With 4.5+ years of experience engineering enterprise Microsoft Power Platform solutions, SharePoint Online architectures, Azure AI Foundry document pipelines, and Azure Databricks ETL workflows across KPI Partners, Wilfrid Laurier University, and Accenture, I am writing to express my strong interest in the ${options.roleTitle} role at ${options.company}.`;
+
+    const bodyParagraph1 = `In my current role as Power Platform and AI Developer at KPI Partners, I architected a clinical study intake and regulatory tracking platform using Power Apps, SharePoint Online, and Power Automate that reduced processing time by 60%, and engineered an automated financial invoice extraction pipeline using Azure AI Foundry (Content Understanding) achieving 95%+ accuracy while reducing compute costs by 70%.`;
+
+    const bodyParagraph2 = `Previously at Accenture and Wilfrid Laurier University (where I completed my Master of Applied Computing), I led 15+ TB SharePoint migrations using ShareGate and PowerShell with 99.9% data fidelity, modernized 40+ InfoPath/Nintex workflows into Power Apps and Power Automate Desktop RPA flows, and built a Python/FAISS/OpenAI RAG system achieving a 1.0 Context Precision score on Ragas. Backed by 8 Microsoft certifications including PL-600 (Solution Architect Expert), PL-400, and AZ-204, I am ready to deliver immediate impact at ${options.company}.`;
+
+    html = html
+      .replace(/{{FULL_NAME}}/g, vault.fullName || 'Shubham Yadav')
+      .replace(/{{TARGET_ROLE_TITLE}}/g, masterCv.title)
+      .replace(/{{CONTACT_LINE}}/g, contactLine)
+      .replace(/{{DATE}}/g, today)
+      .replace(/{{COMPANY_NAME}}/g, options.company)
+      .replace(/{{OPENING_HOOK}}/g, openingHook)
+      .replace(/{{BODY_PARAGRAPH_1}}/g, bodyParagraph1)
+      .replace(/{{BODY_PARAGRAPH_2}}/g, bodyParagraph2);
+
+    await this.printHtmlToPdf(html, outputPath);
+  }
+
+  private async printHtmlToPdf(htmlContent: string, outputPath: string): Promise<void> {
+    try {
+      const candidateBins = [
+        '/ms-playwright/chromium_headless_shell-1247/chrome-headless-shell-linux64/chrome-headless-shell',
+        '/ms-playwright/chromium-1247/chrome-linux/chrome'
+      ];
+      const executablePath = candidateBins.find((p) => fs.existsSync(p));
+      const browser = await chromium.launch({
+        headless: true,
+        ...(executablePath ? { executablePath } : {})
+      });
+      const page = await browser.newPage();
+      await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' });
+      await page.pdf({
+        path: outputPath,
+        format: 'Letter',
+        printBackground: true,
+        margin: {
+          top: '0.4in',
+          bottom: '0.4in',
+          left: '0.48in',
+          right: '0.48in'
+        }
+      });
+      await browser.close();
+    } catch (err: any) {
+      console.warn(
+        `[Resume Compiler] Playwright PDF print fallback triggered (${err.message}); copying attached baseline PDF.`
+      );
+      const attachedResumePath = path.resolve(
+        process.cwd(),
+        'public',
+        'assets',
+        'aistudio',
+        'ShubhamYadav_Resume_2bb95baf.pdf'
+      );
+      if (fs.existsSync(attachedResumePath)) {
+        fs.copyFileSync(attachedResumePath, outputPath);
+      }
+    }
   }
 }

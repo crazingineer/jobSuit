@@ -1,4 +1,4 @@
-export type JobPortal = 'linkedin' | 'naukri' | 'workday' | 'greenhouse' | 'lever' | 'ashby' | 'other';
+export type JobPortal = 'linkedin' | 'naukri' | 'hiringcafe' | 'workday' | 'greenhouse' | 'lever' | 'ashby' | 'other';
 
 export type JobStatus = 
   | 'discovered' 
@@ -28,6 +28,8 @@ export interface JobListing {
   advertisedComp?: string;
   status: JobStatus;
   easyApply: boolean;
+  externalApplyUrl?: string;
+  atsProvider?: string;
   score?: number;
   legitimacyTier?: 'High Confidence' | 'Proceed with Caution' | 'Suspicious';
   finalDecision?: 'Apply' | 'Consider' | 'Research first' | 'Skip';

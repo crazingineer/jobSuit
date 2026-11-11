@@ -42,6 +42,9 @@ export class ApplyOrchestrator {
       disabilityStatus: vaultRow.disability_status,
       veteranStatus: vaultRow.veteran_status,
       eeoEthnicity: vaultRow.eeo_ethnicity,
+      atsEmail: vaultRow.ats_email || vaultRow.email,
+      atsPassword: vaultRow.ats_password_encrypted || 'JobSuite#ATS2026!',
+      atsAuthStrategy: vaultRow.ats_auth_strategy || 'smart_detect',
       qaSnippets: JSON.parse(vaultRow.qa_snippets),
       updatedAt: vaultRow.updated_at
     };
@@ -78,17 +81,42 @@ export class ApplyOrchestrator {
       reportsTo: job.reports_to,
       advertisedComp: job.advertised_comp,
       status: job.status,
-      easyApply: Boolean(job.easy_apply)
+      easyApply: Boolean(job.easy_apply),
+      externalApplyUrl: job.external_apply_url || undefined,
+      atsProvider: job.ats_provider || undefined
     };
+
+    const channelDesc =
+      jobListing.portal === 'linkedin'
+        ? jobListing.easyApply
+          ? 'LINKEDIN ONSITE EASY APPLY'
+          : `LINKEDIN OFFSITE -> EXTERNAL ATS (${jobListing.atsProvider || 'Company Portal'})`
+        : `${jobListing.portal.toUpperCase()} DIRECT ATS`;
 
     console.log(`\n--- Executing 3-Layer Auto-Applier ---`);
     console.log(`Job:      ${jobListing.title} @ ${jobListing.company}`);
-    console.log(`Portal:   ${jobListing.portal.toUpperCase()}`);
+    console.log(`Channel:  ${channelDesc}`);
     console.log(`Mode:     ${mode.toUpperCase()}`);
     console.log(`Resume:   ${tailoredPdfPath}`);
 
     if (jobListing.portal === 'linkedin') {
-      return await linkedInEasyApplyAdapter.apply(jobListing, vault, tailoredPdfPath, mode, { dryRun: options.dryRun ?? true });
+      if (jobListing.easyApply) {
+        return await linkedInEasyApplyAdapter.apply(jobListing, vault, tailoredPdfPath, mode, {
+          dryRun: options.dryRun ?? true
+        });
+      }
+
+      // Normal LinkedIn job (easyApply === false): NEVER route to LinkedIn Easy Apply!
+      const extUrl = jobListing.externalApplyUrl || jobListing.url;
+      const routedJob: JobListing = { ...jobListing, url: extUrl };
+      if (/greenhouse\.io|lever\.co|ashbyhq\.com/i.test(extUrl)) {
+        return await greenhouseApplyAdapter.apply(routedJob, vault, tailoredPdfPath, mode, {
+          dryRun: options.dryRun ?? true
+        });
+      }
+      return await workdayApplyAdapter.apply(routedJob, vault, tailoredPdfPath, mode, {
+        dryRun: options.dryRun ?? true
+      });
     } else if (jobListing.portal === 'naukri') {
       return await naukriApplyAdapter.apply(jobListing, vault, tailoredPdfPath, mode, { dryRun: options.dryRun ?? true });
     } else if (jobListing.portal === 'workday') {

@@ -1,47 +1,63 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  BookUser, 
-  Save, 
-  FileCheck, 
-  Sparkles, 
-  Plus, 
-  Trash2, 
-  CheckCircle2, 
-  Eye, 
+import {
+  Save,
+  CheckCircle2,
+  Eye,
   Code,
   Briefcase,
-  GraduationCap,
-  Award,
   Globe,
   IndianRupee,
-  ShieldAlert,
   FileText,
-  Download,
-  ExternalLink,
   RefreshCw,
-  Clock
+  KeyRound,
+  UserCheck,
+  ShieldCheck,
+  EyeOff,
+  Copy
 } from 'lucide-react';
-import { PersonalVault, MasterCV } from '@/types/vault';
+import { PersonalVault, MasterCV, AtsAccountRecord } from '@/types/vault';
 import { INITIAL_VAULT, INITIAL_MASTER_CV, clientApi } from '@/lib/api';
+import { generateJakesResumeLatex } from '@/utils/jakes-resume-generator';
+import { JakesResumePaperPreview } from '../common/JakesResumePaperPreview';
+
+const SUMMARY_LABELS: Record<string, { label: string }> = {
+  powerPlatform: { label: 'Power Platform & SharePoint Architect Variant' },
+  dataEngineering: { label: 'Data Engineering & Databricks ETL Variant' },
+  aiAutomation: { label: 'AI Automation, Copilot Studio & RAG Variant' },
+  aiEngineer: { label: 'AI Engineer / LLMOps Archetype Variant' },
+  lead: { label: 'Lead / Staff Solution Architect Variant' }
+};
+
+const SKILL_CATEGORY_LABELS: Record<string, string> = {
+  languages: 'Languages & Query',
+  frameworks: 'Power Platform & Frameworks',
+  aiLlm: 'AI, LLM & Agentic Stack',
+  cloudDevops: 'Azure Cloud & Data Engineering',
+  sharepointMigration: 'SharePoint & Enterprise Migration',
+  toolsVersionControl: 'DevOps, ALM & Delivery Tools'
+};
 
 export const MasterVaultStudio: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'indian_vault' | 'experience' | 'skills' | 'pdf_preview'>('indian_vault');
   const [vault, setVault] = useState<PersonalVault>(INITIAL_VAULT);
   const [cv, setCv] = useState<MasterCV>(INITIAL_MASTER_CV);
+  const [atsAccounts, setAtsAccounts] = useState<AtsAccountRecord[]>([]);
+  const [showPassword, setShowPassword] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isCompiling, setIsCompiling] = useState(false);
-  const [compileSuccess, setCompileSuccess] = useState<string | null>(null);
-  const [previewMode, setPreviewMode] = useState<'compiled_pdf' | 'semantic'>('compiled_pdf');
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [previewMode, setPreviewMode] = useState<'compiled_pdf' | 'latex'>('compiled_pdf');
+  const [copiedTex, setCopiedTex] = useState(false);
   const [pdfTimestamp, setPdfTimestamp] = useState<number>(Date.now());
 
-  // Load live vault on mount
   useEffect(() => {
     async function loadVault() {
       try {
         const res = await clientApi.getVault();
         if (res.vault) setVault(res.vault);
         if (res.masterCv) setCv(res.masterCv);
+        if (res.atsAccounts) setAtsAccounts(res.atsAccounts);
       } catch (err) {
         console.error('Failed to load vault from API', err);
       }
@@ -51,17 +67,22 @@ export const MasterVaultStudio: React.FC = () => {
 
   const handleSave = async () => {
     setIsSaving(true);
+    setStatusMessage(null);
     try {
       const res = await clientApi.saveVault(vault, cv);
       setPdfTimestamp(Date.now());
       setSaveSuccess(true);
-      if (res?.compileResult?.durationMs) {
-        setCompileSuccess(`Master Resume PDF auto-synced in ${res.compileResult.durationMs}ms!`);
-        setTimeout(() => setCompileSuccess(null), 3500);
-      }
-      setTimeout(() => setSaveSuccess(false), 2500);
+      setStatusMessage(
+        res?.compileResult?.durationMs
+          ? `Saved to SQLite & Master PDF synced in ${res.compileResult.durationMs}ms`
+          : 'Vault & Master CV saved to SQLite'
+      );
+      setTimeout(() => {
+        setSaveSuccess(false);
+        setStatusMessage(null);
+      }, 3500);
     } catch (e: any) {
-      alert('Error saving to SQLite: ' + e.message);
+      setStatusMessage(`Save notice: ${e.message}`);
     } finally {
       setIsSaving(false);
     }
@@ -69,64 +90,71 @@ export const MasterVaultStudio: React.FC = () => {
 
   const handleCompileMasterPdf = async () => {
     setIsCompiling(true);
-    setCompileSuccess(null);
+    setStatusMessage(null);
     try {
       await clientApi.saveVault(vault, cv);
       const res = await clientApi.recompileMasterCv();
       if (res.success) {
-        setCompileSuccess(`Compiled in ${res.result?.durationMs || 430}ms!`);
+        setStatusMessage(`Compiled Master_Resume.pdf in ${res.result?.durationMs || 420}ms`);
         setPdfTimestamp(Date.now());
         setActiveTab('pdf_preview');
         setPreviewMode('compiled_pdf');
-        setTimeout(() => setCompileSuccess(null), 3500);
+        setTimeout(() => setStatusMessage(null), 3500);
       } else {
-        alert('Compilation failed: ' + res.error);
+        setStatusMessage(`Compilation notice: ${res.error || 'Fallback PDF active'}`);
       }
     } catch (e: any) {
-      alert('Error compiling Master PDF: ' + e.message);
+      setStatusMessage(`Compile error: ${e.message}`);
     } finally {
       setIsCompiling(false);
     }
   };
 
+  const summaryEntries = Object.entries(cv.summaryVariants || {}).filter(
+    ([, text]) => typeof text === 'string' && text.trim().length > 0
+  );
+
+  const skillEntries = Object.entries(cv.skillsTaxonomy || {}).filter(
+    ([, list]) => Array.isArray(list) && list.length > 0
+  );
+
+  const inputClass =
+    'w-full h-9 px-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 font-mono focus:border-indigo-500 outline-none';
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-            Master Vault & Resume Studio
-            <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              Source of Truth
-            </span>
+          <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
+            Master Vault &amp; Jake&apos;s Resume Studio
           </h2>
-          <p className="text-xs text-zinc-400 mt-0.5">
-            Personal Fact Vault (Indian & Global Recruitment Q&A) • Grounded Master CV bullets • Zero-Hallucination Anchor
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Dual-Market Profile: India (🇮🇳 +91 7276085461) &amp; Canada (🇨🇦 +1 289-890-3999 · Open Work Permit) · ATS Credentials · Grounded Master CV
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          {compileSuccess && (
-            <span className="text-xs text-emerald-400 font-mono flex items-center gap-1 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              {compileSuccess}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {statusMessage && (
+            <span className="h-9 px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-800 dark:text-emerald-300 font-mono inline-flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span>{statusMessage}</span>
             </span>
           )}
 
           <button
             onClick={handleCompileMasterPdf}
             disabled={isCompiling}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 text-white font-medium text-xs border border-indigo-400/30 shadow-md shadow-indigo-600/20 transition-all disabled:opacity-50"
-            title="Compile Master CV to ATS-friendly PDF via Playwright (<500ms)"
+            className="h-9 inline-flex items-center justify-center gap-2 px-3.5 rounded-xl bg-white dark:bg-[#111522] hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-100 font-semibold text-xs border border-slate-200 dark:border-slate-800 transition-all disabled:opacity-50 whitespace-nowrap shrink-0 cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${isCompiling ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 ${isCompiling ? 'animate-spin' : ''}`} />
             <span>{isCompiling ? 'Compiling PDF...' : 'Compile Master ATS PDF'}</span>
           </button>
 
           <button
             onClick={handleSave}
             disabled={isSaving}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs shadow-lg shadow-purple-600/30 transition-all disabled:opacity-50"
+            className="h-9 inline-flex items-center justify-center gap-2 px-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-xs transition-all disabled:opacity-50 whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Save className="w-3.5 h-3.5" />
             <span>{saveSuccess ? 'Saved to SQLite!' : isSaving ? 'Saving...' : 'Save Changes'}</span>
@@ -134,228 +162,353 @@ export const MasterVaultStudio: React.FC = () => {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-white/[0.08] text-xs font-medium">
+      {/* Navigation Tabs */}
+      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 text-xs font-medium overflow-x-auto">
         <button
           onClick={() => setActiveTab('indian_vault')}
-          className={`pb-3 border-b-2 flex items-center gap-1.5 transition-colors ${
+          className={`h-10 px-3 border-b-2 inline-flex items-center gap-2 transition-colors whitespace-nowrap cursor-pointer ${
             activeTab === 'indian_vault'
-              ? 'border-purple-500 text-purple-300'
-              : 'border-transparent text-zinc-400 hover:text-zinc-200'
+              ? 'border-indigo-600 text-indigo-600 dark:text-white font-bold'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
-          <IndianRupee className="w-3.5 h-3.5 text-amber-400" />
-          <span>Indian & Global Q&A Vault (CTC / Notice / EEO)</span>
+          <Globe className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+          <span>India &amp; Canada Vault, Work Permit &amp; ATS Credentials</span>
         </button>
         <button
           onClick={() => setActiveTab('experience')}
-          className={`pb-3 border-b-2 flex items-center gap-1.5 transition-colors ${
+          className={`h-10 px-3 border-b-2 inline-flex items-center gap-2 transition-colors whitespace-nowrap cursor-pointer ${
             activeTab === 'experience'
-              ? 'border-purple-500 text-purple-300'
-              : 'border-transparent text-zinc-400 hover:text-zinc-200'
+              ? 'border-indigo-600 text-indigo-600 dark:text-white font-bold'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
-          <Briefcase className="w-3.5 h-3.5 text-indigo-400" />
-          <span>Modular Work Experience & Impact Bullets</span>
+          <Briefcase className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+          <span>Work Experience &amp; Grounded Bullets ({cv.workExperience.length})</span>
         </button>
         <button
           onClick={() => setActiveTab('skills')}
-          className={`pb-3 border-b-2 flex items-center gap-1.5 transition-colors ${
+          className={`h-10 px-3 border-b-2 inline-flex items-center gap-2 transition-colors whitespace-nowrap cursor-pointer ${
             activeTab === 'skills'
-              ? 'border-purple-500 text-purple-300'
-              : 'border-transparent text-zinc-400 hover:text-zinc-200'
+              ? 'border-indigo-600 text-indigo-600 dark:text-white font-bold'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
-          <Code className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Skills Taxonomy & Summaries</span>
+          <Code className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
+          <span>Skills Taxonomy &amp; Archetype Summaries</span>
         </button>
         <button
           onClick={() => setActiveTab('pdf_preview')}
-          className={`pb-3 border-b-2 flex items-center gap-1.5 transition-colors ${
+          className={`h-10 px-3 border-b-2 inline-flex items-center gap-2 transition-colors whitespace-nowrap cursor-pointer ${
             activeTab === 'pdf_preview'
-              ? 'border-purple-500 text-purple-300'
-              : 'border-transparent text-zinc-400 hover:text-zinc-200'
+              ? 'border-indigo-600 text-indigo-600 dark:text-white font-bold'
+              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
           }`}
         >
-          <Eye className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Live ATS PDF Template Preview</span>
+          <Eye className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+          <span>Jake&apos;s Resume Live Preview</span>
         </button>
       </div>
 
-      {/* Tab 1: Indian & Global Recruitment Vault */}
+      {/* Tab 1: Dual India + Canada Vault */}
       {activeTab === 'indian_vault' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Indian Recruitment Fields */}
-          <div className="p-5 rounded-xl glass-panel border border-white/[0.08] space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                <IndianRupee className="w-4 h-4 text-amber-400" />
-                Indian Recruitment Parameters (Naukri & ATS Form Auto-Fill)
-              </h3>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-300">
-                Lakhs INR (LPA)
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs text-zinc-400 font-mono block mb-1">Current CTC (INR Lakhs)</label>
-                <input
-                  type="number"
-                  value={vault.currentCtcLakhs}
-                  onChange={(e) => setVault({ ...vault, currentCtcLakhs: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-zinc-200 font-mono focus:border-purple-500/50 outline-none"
-                />
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            {/* Candidate Identity */}
+            <div className="p-5 rounded-2xl bg-white dark:bg-[#111522] border border-slate-200 dark:border-slate-800 space-y-4 shadow-2xs">
+              <div className="flex items-center justify-between pb-2.5 border-b border-slate-200 dark:border-slate-800">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <UserCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <span>Candidate Identity</span>
+                </h3>
+                <span className="text-[11px] font-mono text-slate-500">Primary Profile</span>
               </div>
 
-              <div>
-                <label className="text-xs text-zinc-400 font-mono block mb-1">Expected CTC (INR Lakhs)</label>
-                <input
-                  type="number"
-                  value={vault.expectedCtcLakhs}
-                  onChange={(e) => setVault({ ...vault, expectedCtcLakhs: parseFloat(e.target.value) || 0 })}
-                  className="w-full px-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-zinc-200 font-mono focus:border-purple-500/50 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-zinc-400 font-mono block mb-1">Official Notice Period (Days)</label>
-                <input
-                  type="number"
-                  value={vault.noticePeriodDays}
-                  onChange={(e) => setVault({ ...vault, noticePeriodDays: parseInt(e.target.value) || 0 })}
-                  className="w-full px-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-zinc-200 font-mono focus:border-purple-500/50 outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-zinc-400 font-mono block mb-1">Last Working Day (LWD)</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Immediately or 2026-12-15"
-                  value={vault.lastWorkingDay || ''}
-                  onChange={(e) => setVault({ ...vault, lastWorkingDay: e.target.value })}
-                  className="w-full px-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-zinc-200 font-mono focus:border-purple-500/50 outline-none"
-                />
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1">Full Legal Name</label>
+                  <input
+                    type="text"
+                    value={vault.fullName || ''}
+                    onChange={(e) => setVault({ ...vault, fullName: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1">Primary Email</label>
+                  <input
+                    type="email"
+                    value={vault.email || ''}
+                    onChange={(e) => setVault({ ...vault, email: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1">LinkedIn Profile URL</label>
+                  <input
+                    type="text"
+                    value={vault.linkedinUrl || ''}
+                    onChange={(e) => setVault({ ...vault, linkedinUrl: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1">GitHub / Portfolio URL</label>
+                  <input
+                    type="text"
+                    value={vault.githubUrl || ''}
+                    onChange={(e) => setVault({ ...vault, githubUrl: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-6 pt-1 text-xs">
-              <label className="flex items-center gap-2 cursor-pointer text-zinc-300">
-                <input
-                  type="checkbox"
-                  checked={vault.ctcNegotiable}
-                  onChange={(e) => setVault({ ...vault, ctcNegotiable: e.target.checked })}
-                  className="rounded border-zinc-700 text-purple-600 focus:ring-0"
-                />
-                <span>CTC Negotiable depending on equity/role</span>
-              </label>
+            {/* Canadian Work Permit & Contact Profile Card */}
+            <div className="p-5 rounded-2xl bg-white dark:bg-[#111522] border border-slate-200 dark:border-slate-800 space-y-4 shadow-2xs">
+              <div className="flex items-center justify-between pb-2.5 border-b border-slate-200 dark:border-slate-800">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <span>🇨🇦 Canada Work Permit &amp; Phone</span>
+                </h3>
+                <span className="text-[11px] font-mono text-emerald-700 dark:text-emerald-400 font-semibold">
+                  Authorized in CA
+                </span>
+              </div>
 
-              <label className="flex items-center gap-2 cursor-pointer text-zinc-300">
-                <input
-                  type="checkbox"
-                  checked={vault.buyoutAvailable}
-                  onChange={(e) => setVault({ ...vault, buyoutAvailable: e.target.checked })}
-                  className="rounded border-zinc-700 text-purple-600 focus:ring-0"
-                />
-                <span>Notice Buyout Available</span>
-              </label>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1">
+                    Canadian Phone Number (+1)
+                  </label>
+                  <input
+                    type="text"
+                    value={vault.phoneCanada || '+1 289-890-3999'}
+                    onChange={(e) => setVault({ ...vault, phoneCanada: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1">
+                    Canadian Location / Hub
+                  </label>
+                  <input
+                    type="text"
+                    value={vault.locationCanada || 'Waterloo / Toronto, ON, Canada'}
+                    onChange={(e) => setVault({ ...vault, locationCanada: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1">
+                    Canadian Work Authorization Status
+                  </label>
+                  <input
+                    type="text"
+                    value={
+                      vault.workPermitCanada ||
+                      'Canadian Open Work Permit (Authorized to work in Canada — No LMIA / Sponsorship Required)'
+                    }
+                    onChange={(e) => setVault({ ...vault, workPermitCanada: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1">
+                    Target Compensation (CAD)
+                  </label>
+                  <input
+                    type="text"
+                    value={vault.expectedCompCad || 'CAD $115,000 - $135,000'}
+                    onChange={(e) => setVault({ ...vault, expectedCompCad: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+              </div>
             </div>
 
-            <div>
-              <label className="text-xs text-zinc-400 font-mono block mb-1">Preferred Work Locations</label>
-              <input
-                type="text"
-                value={vault.preferredLocations.join(', ')}
-                onChange={(e) => setVault({ ...vault, preferredLocations: e.target.value.split(',').map(s => s.trim()) })}
-                className="w-full px-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-zinc-200 font-mono focus:border-purple-500/50 outline-none"
-              />
+            {/* Indian Recruitment Parameters Card */}
+            <div className="p-5 rounded-2xl bg-white dark:bg-[#111522] border border-slate-200 dark:border-slate-800 space-y-4 shadow-2xs">
+              <div className="flex items-center justify-between pb-2.5 border-b border-slate-200 dark:border-slate-800">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <IndianRupee className="w-4 h-4 text-amber-500" />
+                  <span>🇮🇳 India Profile, CTC &amp; Notice</span>
+                </h3>
+                <span className="text-[11px] font-mono text-indigo-600 dark:text-indigo-400 font-semibold">
+                  Authorized in IN
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1">India Phone (+91)</label>
+                  <input
+                    type="text"
+                    value={vault.phone || ''}
+                    onChange={(e) => setVault({ ...vault, phone: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1">India City</label>
+                  <input
+                    type="text"
+                    value={vault.location || ''}
+                    onChange={(e) => setVault({ ...vault, location: e.target.value })}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1">Current CTC (LPA)</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    value={vault.currentCtcLakhs ?? 0}
+                    onChange={(e) => setVault({ ...vault, currentCtcLakhs: parseFloat(e.target.value) || 0 })}
+                    className={inputClass}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1">Expected CTC (LPA)</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    value={vault.expectedCtcLakhs ?? 0}
+                    onChange={(e) => setVault({ ...vault, expectedCtcLakhs: parseFloat(e.target.value) || 0 })}
+                    className={inputClass}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1">Notice Period (Days)</label>
+                  <input
+                    type="number"
+                    value={vault.noticePeriodDays ?? 60}
+                    onChange={(e) => setVault({ ...vault, noticePeriodDays: parseInt(e.target.value) || 0 })}
+                    className={inputClass}
+                  />
+                </div>
+
+                <div className="flex items-end pb-1.5">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-700 dark:text-slate-300 font-medium">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(vault.buyoutAvailable)}
+                      onChange={(e) => setVault({ ...vault, buyoutAvailable: e.target.checked })}
+                      className="rounded accent-indigo-600"
+                    />
+                    <span>Buyout Option</span>
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Global Work Authorization & EEO */}
-          <div className="p-5 rounded-xl glass-panel border border-white/[0.08] space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                <Globe className="w-4 h-4 text-cyan-400" />
-                Global Authorization & EEO Disclosures
-              </h3>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300">
-                ATS Auto-Answer
+          {/* Row 2: ATS Portal Credentials & Login vs Sign-Up Ledger */}
+          <div className="p-5 rounded-2xl bg-white dark:bg-[#111522] border border-slate-200 dark:border-slate-800 space-y-4 shadow-2xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-200 dark:border-slate-800">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <KeyRound className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <span>ATS Portal Credentials &amp; Smart Login vs. Sign-Up Resolution</span>
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Used when applying on Workday (*.myworkdayjobs.com), SmartRecruiters, Oracle Taleo, or iCIMS portals.
+                </p>
+              </div>
+              <span className="text-xs font-mono text-indigo-600 dark:text-indigo-400 font-semibold shrink-0">
+                SQLite ats_accounts Ledger
               </span>
             </div>
 
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <div>
-                <label className="text-xs text-zinc-400 font-mono block mb-1">Visa & Citizenship Status</label>
+                <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1">
+                  ATS Account Email Address
+                </label>
                 <input
-                  type="text"
-                  value={vault.visaStatus}
-                  onChange={(e) => setVault({ ...vault, visaStatus: e.target.value })}
-                  className="w-full px-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-zinc-200 font-mono focus:border-purple-500/50 outline-none"
+                  type="email"
+                  value={vault.atsEmail || vault.email || ''}
+                  onChange={(e) => setVault({ ...vault, atsEmail: e.target.value })}
+                  className={inputClass}
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div>
-                  <label className="text-xs text-zinc-400 font-mono block mb-1">Gender</label>
-                  <select 
-                    value={vault.gender} 
-                    onChange={(e) => setVault({ ...vault, gender: e.target.value })}
-                    className="w-full px-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-zinc-200 font-mono"
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1">
+                  Dedicated ATS Portal Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={vault.atsPassword || ''}
+                    onChange={(e) => setVault({ ...vault, atsPassword: e.target.value })}
+                    className={`${inputClass} pr-9`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
                   >
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Non-binary">Non-binary</option>
-                    <option value="Decline to self-identify">Decline to self-identify</option>
-                  </select>
+                    {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
                 </div>
+              </div>
 
-                <div>
-                  <label className="text-xs text-zinc-400 font-mono block mb-1">Disability Status</label>
-                  <select 
-                    value={vault.disabilityStatus} 
-                    onChange={(e) => setVault({ ...vault, disabilityStatus: e.target.value })}
-                    className="w-full px-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-xs text-zinc-200 font-mono"
-                  >
-                    <option value="No">No</option>
-                    <option value="Yes">Yes</option>
-                    <option value="Decline to self-identify">Decline to self-identify</option>
-                  </select>
-                </div>
+              <div>
+                <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1">
+                  Login vs. Sign-Up Decision Strategy
+                </label>
+                <select
+                  value={vault.atsAuthStrategy || 'smart_detect'}
+                  onChange={(e) => setVault({ ...vault, atsAuthStrategy: e.target.value as any })}
+                  className={inputClass}
+                >
+                  <option value="smart_detect">Smart Auto-Detect (Ledger → Sign-In → Auto Sign-Up)</option>
+                  <option value="login_first">Always Try Sign-In First, Pivot on Error</option>
+                  <option value="signup_first">Try Create Account First for Unknown Domains</option>
+                </select>
               </div>
             </div>
 
-            {/* Behavioral Snippets */}
-            <div className="space-y-2 pt-2 border-t border-white/[0.06]">
-              <label className="text-xs font-semibold text-zinc-300 block">
-                Standard Behavioral Text Snippets (Q&A Vault)
-              </label>
-
-              <div className="space-y-2">
-                <div className="p-2.5 rounded-lg bg-black/30 border border-white/[0.04]">
-                  <span className="text-[10px] font-mono text-purple-400 uppercase font-semibold block mb-1">
-                    Reason for Looking / Why Change?
-                  </span>
-                  <textarea
-                    rows={2}
-                    value={vault.qaSnippets.why_change || ''}
-                    onChange={(e) => setVault({ ...vault, qaSnippets: { ...vault.qaSnippets, why_change: e.target.value } })}
-                    className="w-full bg-transparent text-xs text-zinc-200 focus:outline-none resize-none leading-relaxed"
-                  />
-                </div>
-
-                <div className="p-2.5 rounded-lg bg-black/30 border border-white/[0.04]">
-                  <span className="text-[10px] font-mono text-purple-400 uppercase font-semibold block mb-1">
-                    Leadership & Shipping Philosophy
-                  </span>
-                  <textarea
-                    rows={2}
-                    value={vault.qaSnippets.leadership_style || ''}
-                    onChange={(e) => setVault({ ...vault, qaSnippets: { ...vault.qaSnippets, leadership_style: e.target.value } })}
-                    className="w-full bg-transparent text-xs text-zinc-200 focus:outline-none resize-none leading-relaxed"
-                  />
-                </div>
+            {/* Domain-Scoped ATS Account Ledger Table */}
+            <div className="pt-2">
+              <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 flex items-center justify-between">
+                <span>Tracked Company ATS Domains (Auto-Sign-In Enabled)</span>
+                <span className="text-[11px] font-mono text-slate-500">{atsAccounts.length} tenant(s) recorded</span>
+              </div>
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden bg-slate-50 dark:bg-slate-900/50">
+                <table className="w-full text-left text-xs font-mono">
+                  <thead className="bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 text-[11px]">
+                    <tr>
+                      <th className="py-2 px-3">ATS Tenant Hostname</th>
+                      <th className="py-2 px-3">Portal Engine</th>
+                      <th className="py-2 px-3">Registered Email</th>
+                      <th className="py-2 px-3">Resolution Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200/70 dark:divide-slate-800">
+                    {atsAccounts.map((acc) => (
+                      <tr key={acc.id} className="text-slate-700 dark:text-slate-300">
+                        <td className="py-2 px-3 text-slate-900 dark:text-white font-semibold">{acc.domain}</td>
+                        <td className="py-2 px-3 uppercase text-indigo-600 dark:text-indigo-400 text-[11px] font-semibold">
+                          {acc.portalType}
+                        </td>
+                        <td className="py-2 px-3 text-slate-500 dark:text-slate-400">{acc.emailUsed}</td>
+                        <td className="py-2 px-3">
+                          <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold">
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                            Known Account → Direct Sign-In
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
@@ -366,40 +519,39 @@ export const MasterVaultStudio: React.FC = () => {
       {activeTab === 'experience' && (
         <div className="space-y-4">
           {cv.workExperience.map((exp, expIdx) => (
-            <div key={expIdx} className="p-5 rounded-xl glass-panel border border-white/[0.08] space-y-4">
-              <div className="flex items-center justify-between pb-2 border-b border-white/[0.06]">
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-bold text-white">{exp.role}</span>
-                  <span className="text-xs text-purple-300 font-mono">@{exp.company}</span>
-                  <span className="text-xs text-zinc-500 font-mono">({exp.dates})</span>
+            <div
+              key={expIdx}
+              className="p-5 rounded-2xl bg-white dark:bg-[#111522] border border-slate-200 dark:border-slate-800 space-y-4 shadow-2xs"
+            >
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-200 dark:border-slate-800">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <span className="text-sm font-bold text-slate-900 dark:text-white">{exp.role}</span>
+                  <span className="text-xs text-indigo-600 dark:text-indigo-400 font-mono font-semibold">
+                    @{exp.company}
+                  </span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">({exp.dates})</span>
                 </div>
-                <span className="text-xs text-zinc-400 font-mono">{exp.location}</span>
+                <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">{exp.location}</span>
               </div>
 
-              {/* Modular Bullets */}
               <div className="space-y-2.5">
-                <div className="text-xs font-semibold text-zinc-300">
-                  Grounded Impact Bullets (Selected & Re-ordered by career-ops Block E):
+                <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Grounded Impact Bullets ({exp.bullets.length} verified statements):
                 </div>
 
-                {exp.bullets.map((bullet, bIdx) => (
-                  <div key={bullet.id} className="p-3 rounded-lg bg-black/30 border border-white/[0.05] space-y-2">
-                    <div className="flex items-start justify-between gap-3">
-                      <span className="text-xs text-zinc-200 leading-relaxed flex-1">
-                        {bullet.text}
-                      </span>
-                    </div>
+                {exp.bullets.map((bullet) => (
+                  <div
+                    key={bullet.id}
+                    className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#151a2a] border border-slate-200 dark:border-slate-800 space-y-2"
+                  >
+                    <p className="text-xs text-slate-800 dark:text-slate-200 leading-relaxed">{bullet.text}</p>
 
-                    <div className="flex items-center justify-between text-[11px] font-mono pt-1 border-t border-white/[0.04]">
-                      <span className="text-emerald-400 font-semibold">
-                        Metrics: {bullet.metrics}
+                    <div className="flex items-center justify-between flex-wrap gap-2 text-[11px] font-mono pt-1.5 border-t border-slate-200/80 dark:border-slate-800">
+                      <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
+                        Impact: {bullet.metrics}
                       </span>
-                      <div className="flex items-center gap-1.5">
-                        {bullet.tags.map((tag, tIdx) => (
-                          <span key={tIdx} className="px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 text-[10px]">
-                            {tag}
-                          </span>
-                        ))}
+                      <div className="flex items-center gap-2 flex-wrap text-slate-500 dark:text-slate-400">
+                        {bullet.tags.join(' · ')}
                       </div>
                     </div>
                   </div>
@@ -412,247 +564,156 @@ export const MasterVaultStudio: React.FC = () => {
 
       {/* Tab 3: Skills Taxonomy & Summaries */}
       {activeTab === 'skills' && (
-        <div className="p-5 rounded-xl glass-panel border border-white/[0.08] space-y-5">
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-white">Summary Variants (Archetype Adaptive)</h3>
-            <div className="space-y-2">
-              <div className="p-3 rounded-lg bg-black/30 border border-white/[0.05]">
-                <span className="text-[10px] font-mono text-purple-400 uppercase font-semibold block mb-1">
-                  AI Engineer / LLMOps Archetype Variant
-                </span>
-                <p className="text-xs text-zinc-200 leading-relaxed font-sans">
-                  {cv.summaryVariants.aiEngineer}
-                </p>
-              </div>
+        <div className="space-y-6">
+          <div className="p-5 rounded-2xl bg-white dark:bg-[#111522] border border-slate-200 dark:border-slate-800 space-y-4 shadow-2xs">
+            <div className="flex items-center justify-between pb-2.5 border-b border-slate-200 dark:border-slate-800">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                Archetype-Adaptive Professional Summaries ({summaryEntries.length} Active Variants)
+              </h3>
+              <span className="text-[11px] font-mono text-indigo-600 dark:text-indigo-400 font-semibold">
+                career-ops Block E Selector
+              </span>
+            </div>
 
-              <div className="p-3 rounded-lg bg-black/30 border border-white/[0.05]">
-                <span className="text-[10px] font-mono text-cyan-400 uppercase font-semibold block mb-1">
-                  Lead / Staff Architect Archetype Variant
-                </span>
-                <p className="text-xs text-zinc-200 leading-relaxed font-sans">
-                  {cv.summaryVariants.lead}
-                </p>
-              </div>
+            <div className="grid grid-cols-1 gap-3">
+              {summaryEntries.map(([key, text]) => {
+                const meta = SUMMARY_LABELS[key] || { label: `${key} Variant` };
+                return (
+                  <div
+                    key={key}
+                    className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#151a2a] border border-slate-200 dark:border-slate-800 space-y-1.5"
+                  >
+                    <span className="text-[11px] font-mono uppercase font-bold block text-indigo-600 dark:text-indigo-400">
+                      {meta.label}
+                    </span>
+                    <textarea
+                      rows={2}
+                      value={text}
+                      onChange={(e) =>
+                        setCv({
+                          ...cv,
+                          summaryVariants: { ...cv.summaryVariants, [key]: e.target.value }
+                        })
+                      }
+                      className="w-full bg-transparent text-xs text-slate-800 dark:text-slate-200 leading-relaxed focus:outline-none resize-none"
+                    />
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          <div className="space-y-3 pt-3 border-t border-white/[0.06]">
-            <h3 className="text-sm font-semibold text-white">Verified Skills Taxonomy</h3>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-              <div className="p-3 rounded-lg bg-black/30 border border-white/[0.05]">
-                <span className="text-zinc-400 font-mono block mb-1 font-semibold">Languages</span>
-                <div className="flex flex-wrap gap-1">
-                  {cv.skillsTaxonomy.languages.map((s, idx) => (
-                    <span key={idx} className="px-1.5 py-0.5 rounded bg-white/[0.04] text-zinc-300 font-mono text-[11px]">
-                      {s}
-                    </span>
-                  ))}
-                </div>
-              </div>
+          <div className="p-5 rounded-2xl bg-white dark:bg-[#111522] border border-slate-200 dark:border-slate-800 space-y-4 shadow-2xs">
+            <div className="flex items-center justify-between pb-2.5 border-b border-slate-200 dark:border-slate-800">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                Verified Technical Skills Taxonomy
+              </h3>
+              <span className="text-[11px] font-mono text-emerald-700 dark:text-emerald-400 font-semibold">
+                Zero-Hallucination Grounded
+              </span>
+            </div>
 
-              <div className="p-3 rounded-lg bg-black/30 border border-white/[0.05]">
-                <span className="text-zinc-400 font-mono block mb-1 font-semibold">AI & LLM Tools</span>
-                <div className="flex flex-wrap gap-1">
-                  {cv.skillsTaxonomy.aiLlm.map((s, idx) => (
-                    <span key={idx} className="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 font-mono text-[11px]">
-                      {s}
-                    </span>
-                  ))}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
+              {skillEntries.map(([catKey, skills]) => (
+                <div
+                  key={catKey}
+                  className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#151a2a] border border-slate-200 dark:border-slate-800 space-y-2"
+                >
+                  <span className="text-slate-900 dark:text-white font-mono block font-bold text-xs">
+                    {SKILL_CATEGORY_LABELS[catKey] || catKey}
+                  </span>
+                  <div className="text-slate-600 dark:text-slate-300 font-mono text-[11px] leading-relaxed">
+                    {(skills as string[]).join(' · ')}
+                  </div>
                 </div>
-              </div>
-
-              <div className="p-3 rounded-lg bg-black/30 border border-white/[0.05]">
-                <span className="text-zinc-400 font-mono block mb-1 font-semibold">Frameworks</span>
-                <div className="flex flex-wrap gap-1">
-                  {cv.skillsTaxonomy.frameworks.map((s, idx) => (
-                    <span key={idx} className="px-1.5 py-0.5 rounded bg-white/[0.04] text-zinc-300 font-mono text-[11px]">
-                      {s}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <div className="p-3 rounded-lg bg-black/30 border border-white/[0.05]">
-                <span className="text-zinc-400 font-mono block mb-1 font-semibold">Cloud & Infra</span>
-                <div className="flex flex-wrap gap-1">
-                  {cv.skillsTaxonomy.cloudDevops.map((s, idx) => (
-                    <span key={idx} className="px-1.5 py-0.5 rounded bg-white/[0.04] text-zinc-300 font-mono text-[11px]">
-                      {s}
-                    </span>
-                  ))}
-                </div>
-              </div>
+              ))}
             </div>
           </div>
         </div>
       )}
 
-      {/* Tab 4: Live ATS Template & PDF Preview */}
+      {/* Tab 4: Live ATS Template & Paper Preview */}
       {activeTab === 'pdf_preview' && (
-        <div className="p-6 rounded-xl glass-panel border border-white/[0.08] space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-white/[0.06] gap-3">
+        <div className="p-5 rounded-2xl bg-white dark:bg-[#111522] border border-slate-200 dark:border-slate-800 space-y-5 shadow-2xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800 gap-3">
             <div>
-              <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                <FileText className="w-4 h-4 text-purple-400" />
-                Master ATS Resume (career-ops Standard)
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <FileText className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <span>Jake&apos;s Resume ATS Standard (Overleaf syzfjbzwjncs)</span>
               </h3>
-              <p className="text-[11px] text-zinc-400">
-                Ground-truth resume for Naukri 9 AM booster, profile uploads, and 1-click ATS applications
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Single-column Computer Modern / Latin Modern serif layout with India (+91 7276085461) &amp; Canada (+1 289-890-3999) switch
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
-              <div className="flex items-center rounded-lg bg-black/40 p-0.5 border border-white/[0.08] text-xs">
+            <div className="flex items-center gap-2.5">
+              <div className="h-9 inline-flex items-center rounded-xl bg-slate-100 dark:bg-slate-800 p-1 border border-slate-200 dark:border-slate-700 text-xs">
                 <button
                   onClick={() => setPreviewMode('compiled_pdf')}
-                  className={`px-3 py-1 rounded-md transition-colors ${
+                  className={`h-7 px-3 rounded-lg transition-colors cursor-pointer ${
                     previewMode === 'compiled_pdf'
-                      ? 'bg-purple-600 text-white font-medium shadow'
-                      : 'text-zinc-400 hover:text-zinc-200'
+                      ? 'bg-white dark:bg-indigo-600 text-slate-900 dark:text-white font-semibold shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-400'
                   }`}
                 >
-                  Compiled ATS PDF
+                  Jake&apos;s Resume Paper Preview
                 </button>
                 <button
-                  onClick={() => setPreviewMode('semantic')}
-                  className={`px-3 py-1 rounded-md transition-colors ${
-                    previewMode === 'semantic'
-                      ? 'bg-purple-600 text-white font-medium shadow'
-                      : 'text-zinc-400 hover:text-zinc-200'
+                  onClick={() => setPreviewMode('latex')}
+                  className={`h-7 px-3 rounded-lg transition-colors cursor-pointer ${
+                    previewMode === 'latex'
+                      ? 'bg-white dark:bg-indigo-600 text-slate-900 dark:text-white font-semibold shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-400'
                   }`}
                 >
-                  Semantic Layout
+                  Overleaf LaTeX (.tex)
                 </button>
               </div>
-
-              <span className="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                ATS Score: 98/100
-              </span>
             </div>
           </div>
 
-          {previewMode === 'compiled_pdf' ? (
+          {previewMode === 'compiled_pdf' && (
+            <JakesResumePaperPreview
+              vault={vault}
+              masterCv={cv}
+              pdfDownloadUrl={`/data/cv_tailored/Master_Resume.pdf?t=${pdfTimestamp}`}
+              pdfFilename="Shubham_Yadav_Master_Resume.pdf"
+              onRecompile={handleCompileMasterPdf}
+              isCompiling={isCompiling}
+            />
+          )}
+
+          {previewMode === 'latex' && (
             <div className="space-y-3">
-              {/* PDF Action Bar */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.03] border border-white/[0.08]">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                    <FileText className="w-5 h-5" />
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-[#141722] border border-slate-200 dark:border-slate-800">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-bold text-slate-900 dark:text-white font-mono">
+                    Jake&apos;s Resume Overleaf LaTeX Source (.tex)
                   </div>
-                  <div>
-                    <div className="text-xs font-semibold text-white">data/cv_tailored/Master_Resume.pdf</div>
-                    <div className="text-[11px] text-zinc-400 font-mono">
-                      Compiled via Playwright headless engine in &lt; 500ms
-                    </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Direct drop-in for Overleaf template https://www.overleaf.com/latex/templates/jakes-resume/syzfjbzwjncs
                   </div>
                 </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleCompileMasterPdf}
-                    disabled={isCompiling}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-medium transition-all shadow-md"
-                  >
-                    <RefreshCw className={`w-3.5 h-3.5 ${isCompiling ? 'animate-spin' : ''}`} />
-                    <span>{isCompiling ? 'Compiling...' : 'Recompile Now'}</span>
-                  </button>
-
-                  <a
-                    href={`/data/cv_tailored/Master_Resume.pdf?t=${pdfTimestamp}`}
-                    download="Master_Resume.pdf"
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] text-zinc-200 text-xs font-medium border border-white/[0.1] transition-all"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Download</span>
-                  </a>
-
-                  <a
-                    href={`/data/cv_tailored/Master_Resume.pdf?t=${pdfTimestamp}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="p-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.1] text-zinc-400 hover:text-zinc-200 border border-white/[0.08]"
-                    title="Open in new window"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                </div>
+                <button
+                  onClick={() => {
+                    const tex = generateJakesResumeLatex(vault, cv);
+                    navigator.clipboard.writeText(tex);
+                    setCopiedTex(true);
+                    setStatusMessage("Copied Jake's Resume LaTeX (.tex) to clipboard!");
+                    setTimeout(() => {
+                      setCopiedTex(false);
+                      setStatusMessage(null);
+                    }, 3000);
+                  }}
+                  className="h-8 inline-flex items-center gap-1.5 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>{copiedTex ? 'Copied .tex!' : 'Copy LaTeX (.tex)'}</span>
+                </button>
               </div>
-
-              {/* Embedded In-App PDF Viewer */}
-              <div className="rounded-xl overflow-hidden border border-white/[0.1] shadow-2xl bg-zinc-950 min-h-[680px] flex flex-col">
-                <iframe
-                  src={`/data/cv_tailored/Master_Resume.pdf?t=${pdfTimestamp}#toolbar=1`}
-                  className="w-full flex-1 min-h-[680px] border-none"
-                  title="Master Resume PDF Preview"
-                />
-              </div>
-            </div>
-          ) : (
-            /* Clean White Paper ATS View */
-            <div className="bg-white text-black p-8 rounded-lg shadow-2xl max-w-3xl mx-auto font-sans text-xs leading-normal select-text">
-              {/* Header */}
-              <div className="border-b border-zinc-300 pb-3 mb-4 text-center">
-                <h1 className="text-2xl font-bold tracking-tight text-zinc-900 uppercase">
-                  {vault.fullName}
-                </h1>
-                <div className="text-[11px] text-zinc-600 mt-1 font-mono flex items-center justify-center gap-3">
-                  <span>{vault.location}</span>
-                  <span>•</span>
-                  <span>{vault.email}</span>
-                  <span>•</span>
-                  <span>{vault.phone}</span>
-                </div>
-                <div className="text-[11px] text-zinc-600 font-mono mt-0.5 flex items-center justify-center gap-3">
-                  <span>{vault.linkedinUrl}</span>
-                  <span>•</span>
-                  <span>{vault.githubUrl}</span>
-                </div>
-              </div>
-
-              {/* Summary */}
-              <div className="mb-4">
-                <h2 className="text-[11px] font-bold uppercase tracking-wider text-zinc-800 border-b border-zinc-200 pb-0.5 mb-1.5 font-mono">
-                  Professional Summary
-                </h2>
-                <p className="text-zinc-700 leading-relaxed">
-                  {cv.summaryVariants.aiEngineer}
-                </p>
-              </div>
-
-              {/* Experience */}
-              <div className="mb-4">
-                <h2 className="text-[11px] font-bold uppercase tracking-wider text-zinc-800 border-b border-zinc-200 pb-0.5 mb-2 font-mono">
-                  Work Experience
-                </h2>
-                {cv.workExperience.map((exp, idx) => (
-                  <div key={idx} className="mb-3">
-                    <div className="flex justify-between font-bold text-zinc-900">
-                      <span>{exp.role} — {exp.company}</span>
-                      <span className="font-mono text-zinc-600 text-[10px]">{exp.dates}</span>
-                    </div>
-                    <ul className="list-disc list-inside mt-1 space-y-1 text-zinc-700">
-                      {exp.bullets.map((b) => (
-                        <li key={b.id} className="leading-relaxed">
-                          {b.text}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-
-              {/* Skills */}
-              <div>
-                <h2 className="text-[11px] font-bold uppercase tracking-wider text-zinc-800 border-b border-zinc-200 pb-0.5 mb-1.5 font-mono">
-                  Technical Skills & Tools
-                </h2>
-                <div className="text-zinc-700 space-y-0.5">
-                  <div><span className="font-semibold">Languages:</span> {cv.skillsTaxonomy.languages.join(', ')}</div>
-                  <div><span className="font-semibold">AI & Automation:</span> {cv.skillsTaxonomy.aiLlm.join(', ')}</div>
-                  <div><span className="font-semibold">Frameworks:</span> {cv.skillsTaxonomy.frameworks.join(', ')}</div>
-                  <div><span className="font-semibold">Cloud & Databases:</span> {cv.skillsTaxonomy.cloudDevops.join(', ')}</div>
-                </div>
-              </div>
+              <pre className="p-4 rounded-xl bg-slate-900 text-[11px] font-mono text-emerald-300 overflow-x-auto max-h-[600px] whitespace-pre leading-relaxed">
+                {generateJakesResumeLatex(vault, cv)}
+              </pre>
             </div>
           )}
         </div>

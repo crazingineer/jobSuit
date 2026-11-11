@@ -49,6 +49,10 @@ export class NaukriScraper {
 
       console.log(`[Naukri Scraper] Found ${jobCards.length} job cards on search results page.`);
 
+      const rulesRow = db.prepare('SELECT min_delay_sec, max_delay_sec FROM automation_rules WHERE id = 1').get() as { min_delay_sec?: number; max_delay_sec?: number } | undefined;
+      const minDelayMs = (rulesRow?.min_delay_sec || 3) * 1000;
+      const maxDelayMs = (rulesRow?.max_delay_sec || 7) * 1000;
+
       for (let i = 0; i < Math.min(jobCards.length, limit); i++) {
         const card = jobCards[i];
 
@@ -80,6 +84,13 @@ export class NaukriScraper {
             }
           }
 
+          // Anti-Rate-Limit Gate: Pre-deduplicate in SQLite BEFORE opening a secondary tab to fetch full JD
+          const existing = db.prepare('SELECT id FROM job_listings WHERE portal = ? AND portal_job_id = ?').get('naukri', realJobId);
+          if (existing) {
+            console.log(`[Naukri Scraper] Skipping already-indexed job ID ${realJobId} (${title} @ ${company}) before opening secondary tab`);
+            continue;
+          }
+
           // Extract real salary without hardcoding
           let advertisedComp: string | undefined = undefined;
           if (salEl) {
@@ -99,7 +110,7 @@ export class NaukriScraper {
               console.log(`[Naukri Scraper] Fetching full JD text for "${title}" @ ${company}...`);
               const jdPage = await context.newPage();
               await jdPage.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
-              await browserManager.humanDelay(1000, 2000);
+              await browserManager.humanDelay(minDelayMs, maxDelayMs);
 
               const jdContainer = await jdPage.$(
                 '.styles_JDC__dang-inner-html__h0K4t, .job-desc, .dang-inner-html, article.job-description, .styles_job-desc-container__txpYf, .clear-both.description'

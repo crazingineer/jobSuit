@@ -8,18 +8,29 @@ export interface PersonalVault {
   githubUrl: string;
   portfolioUrl: string;
 
+  // Canadian Profile & Work Permit Fields
+  phoneCanada?: string; // +1 289-890-3999
+  locationCanada?: string; // Waterloo / Toronto, ON, Canada
+  workPermitCanada?: string; // Canadian Open Work Permit (No LMIA / Sponsorship Required)
+  expectedCompCad?: string; // CAD $115,000 - $135,000
+
+  // ATS Account & Login Automation Credentials
+  atsEmail?: string;
+  atsPassword?: string;
+  atsAuthStrategy?: 'smart_detect' | 'login_first' | 'signup_first' | 'try_login_then_signup' | 'copilot_confirm';
+
   // Indian Specific Recruitment Fields
-  currentCtcLakhs: number; // e.g. 26.0 (INR Lakhs per Annum)
-  expectedCtcLakhs: number; // e.g. 38.0
+  currentCtcLakhs: number; // e.g. 18.0 (INR Lakhs per Annum)
+  expectedCtcLakhs: number; // e.g. 28.0
   ctcNegotiable: boolean;
-  noticePeriodDays: number; // e.g. 60 or 90
-  lastWorkingDay?: string; // Date string or undefined
+  noticePeriodDays: number; // e.g. 60
+  lastWorkingDay?: string;
   buyoutAvailable: boolean;
-  preferredLocations: string[]; // ["Bengaluru", "Hyderabad", "Remote"]
+  preferredLocations: string[]; // ["Pune", "Bengaluru", "Toronto, ON", "Waterloo, ON", "Remote"]
   relocationWilling: boolean;
 
   // Global Authorization & EEO
-  authorizedCountries: string[]; // ["IN", "US"]
+  authorizedCountries: string[]; // ["IN", "CA"]
   needsSponsorship: boolean;
   visaStatus: string;
   gender: string;
@@ -30,6 +41,16 @@ export interface PersonalVault {
   // Behavioral & narrative snippets (Why us, Leadership, Transition, etc.)
   qaSnippets: Record<string, string>;
   updatedAt: string;
+}
+
+export interface AtsAccountRecord {
+  id: string | number;
+  domain: string;
+  portalType: string;
+  emailUsed: string;
+  accountStatus: string;
+  lastLoginAt: string;
+  createdAt: string;
 }
 
 export interface BulletPoint {

@@ -5,7 +5,9 @@
   "type": "module",
   "description": "Windows Native AI Job Automation & Career-Ops Desktop App",
   "scripts": {
-    "dev": "concurrently -k -p \"[{name}]\" -n \"ENGINE,FRONTEND\" -c \"cyan,magenta\" \"tsx engine/server.ts --start\" \"vite\"",
+    "dev": "tsx server.ts",
+    "start": "tsx server.ts",
+    "lint": "tsc --noEmit",
     "dev:ui": "vite",
     "dev:engine": "tsx engine/server.ts --start",
     "build": "tsc -b && vite build",

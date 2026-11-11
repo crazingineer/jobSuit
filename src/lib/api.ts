@@ -1,5 +1,5 @@
 import { JobListing, ApplicationRun, NaukriBoosterLog } from '@/types/job';
-import { PersonalVault, MasterCV } from '@/types/vault';
+import { PersonalVault, MasterCV, AtsAccountRecord } from '@/types/vault';
 import { EvaluationReport } from '@/types/evaluation';
 
 export const API_BASE = '/api';
@@ -44,15 +44,19 @@ export const clientApi = {
     }
   },
 
-  // 4. Fetch Vault & Master CV
-  async getVault(): Promise<{ vault: PersonalVault; masterCv: MasterCV }> {
+  // 4. Fetch Vault, Master CV & ATS Account Ledger
+  async getVault(): Promise<{ vault: PersonalVault; masterCv: MasterCV; atsAccounts: AtsAccountRecord[] }> {
     try {
       const res = await fetch(`${API_BASE}/vault`);
       if (!res.ok) throw new Error('Failed to fetch vault');
       const data = await res.json();
-      return { vault: data.vault || INITIAL_VAULT, masterCv: data.masterCv || INITIAL_MASTER_CV };
+      return {
+        vault: data.vault || INITIAL_VAULT,
+        masterCv: data.masterCv || INITIAL_MASTER_CV,
+        atsAccounts: data.atsAccounts || []
+      };
     } catch {
-      return { vault: INITIAL_VAULT, masterCv: INITIAL_MASTER_CV };
+      return { vault: INITIAL_VAULT, masterCv: INITIAL_MASTER_CV, atsAccounts: [] };
     }
   },
 
@@ -71,11 +75,11 @@ export const clientApi = {
   },
 
   // 6. Trigger Discovery Scan
-  async runDiscovery(keywords: string, location: string) {
+  async runDiscovery(keywords: string, location: string, sources?: string[]) {
     const res = await fetch(`${API_BASE}/discovery/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ keywords, location, evaluateImmediately: true })
+      body: JSON.stringify({ keywords, location, evaluateImmediately: true, sources })
     });
     return await res.json();
   },
@@ -115,11 +119,17 @@ export const clientApi = {
   },
 
   // 10. Launch Co-Pilot or Auto-Pilot Apply
-  async applyToJob(jobId: string, forceMode: 'auto_pilot' | 'co_pilot' = 'co_pilot', dryRun: boolean = true) {
+  async applyToJob(
+    jobId: string,
+    forceMode: 'auto_pilot' | 'co_pilot' = 'co_pilot',
+    dryRun: boolean = true,
+    confirmSubmit: boolean = false,
+    formAnswers?: Record<string, string>
+  ) {
     const res = await fetch(`${API_BASE}/applier/apply/${jobId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ forceMode, dryRun })
+      body: JSON.stringify({ forceMode, dryRun, confirmSubmit, formAnswers })
     });
     return await res.json();
   },
@@ -206,6 +216,72 @@ export const clientApi = {
     } catch (e: any) {
       return { success: false, error: e.message };
     }
+  },
+
+  // 17. Run AI-Centric Browser DOM Action Planner (Set-of-Mark + HP AM0238TX)
+  async runAiDomAgentPass(payload: {
+    presetKey?: string;
+    customElements?: any[];
+    companyName?: string;
+    domain?: string;
+  }) {
+    try {
+      const res = await fetch(`${API_BASE}/applier/ai-plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('AI DOM planner request failed');
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  },
+
+  // 18. Fetch HP AM0238TX Hardware Profile & SQLite DOM Selector Cache
+  async getHardwareProfile() {
+    try {
+      const res = await fetch(`${API_BASE}/system/hardware-profile`);
+      if (!res.ok) throw new Error('Hardware profile failed');
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  },
+
+  // 19. Run Multimodal Screen-Grab Vision Loop (Qwen2.5-VL / Computer Use)
+  async runMultimodalVisionLoop(payload: {
+    presetKey?: 'workday' | 'linkedin' | 'naukri';
+    customControls?: any[];
+    companyName?: string;
+    sampleScreenshotBase64?: string;
+  }) {
+    try {
+      const res = await fetch(`${API_BASE}/applier/vision-loop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) throw new Error('Multimodal Vision Loop request failed');
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
+  },
+
+  // 20. Fetch & Verify Live Active Jobs from LinkedIn Public Guest API
+  async refreshLiveJobs(keywords: string = 'Power Platform Developer', location: string = 'India') {
+    try {
+      const res = await fetch(`${API_BASE}/jobs/refresh-live`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keywords, location })
+      });
+      if (!res.ok) throw new Error('Live job refresh failed');
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, error: e.message };
+    }
   }
 };
 
@@ -216,27 +292,35 @@ export const INITIAL_VAULT: PersonalVault = {
   email: 'shubhambhagwatyadav@gmail.com',
   phone: '+91 7276085461',
   location: 'Pune, Maharashtra, India',
+  phoneCanada: '+1 289-890-3999',
+  locationCanada: 'Waterloo / Toronto, ON, Canada',
+  workPermitCanada: 'Canadian Open Work Permit (Authorized to work in Canada — No LMIA / Sponsorship Required)',
+  expectedCompCad: 'CAD $115,000 - $135,000',
   linkedinUrl: 'https://linkedin.com/in/shubhambhagwatyadav',
   githubUrl: 'https://github.com/crazingineer',
   portfolioUrl: 'https://linkedin.com/in/shubhambhagwatyadav',
-  currentCtcLakhs: 0.0,
-  expectedCtcLakhs: 0.0,
+  currentCtcLakhs: 18.0,
+  expectedCtcLakhs: 28.0,
   ctcNegotiable: true,
   noticePeriodDays: 60,
   lastWorkingDay: '',
   buyoutAvailable: true,
-  preferredLocations: ['Pune', 'Bengaluru', 'Hyderabad', 'Remote'],
+  preferredLocations: ['Pune', 'Bengaluru', 'Toronto, ON', 'Waterloo, ON', 'Oakville, ON', 'Vancouver, BC', 'Remote'],
   relocationWilling: true,
   authorizedCountries: ['IN', 'CA'],
   needsSponsorship: false,
-  visaStatus: 'Indian Citizen (Full work authorization in India)',
+  visaStatus: 'Indian Citizen + Canadian Open Work Permit Holder (Authorized in India & Canada)',
   gender: 'Decline to self-identify',
   disabilityStatus: 'No',
   veteranStatus: 'No',
   eeoEthnicity: 'Asian',
+  atsEmail: 'shubhambhagwatyadav@gmail.com',
+  atsPassword: 'JobSuite#ATS2026!',
+  atsAuthStrategy: 'smart_detect',
   qaSnippets: {
     total_experience: '4.5+ years',
-    why_change: 'Seeking high-impact Power Platform, Data Engineering, and Generative AI Automation roles to build scalable enterprise solutions and intelligent agentic workflows.',
+    canada_work_permit: 'Hold a valid Canadian Open Work Permit (M.A.C. graduate from Wilfrid Laurier University, Waterloo, ON) with Canadian phone +1 289-890-3999; legally authorized to work for any employer in Canada without LMIA or sponsorship.',
+    why_change: 'Seeking high-impact Power Platform, Data Engineering, and Generative AI Automation roles in India or Canada to build scalable enterprise solutions and intelligent agentic workflows.',
     leadership_style: 'Hands-on architectural leadership, governance and CoE best practices, mentoring junior engineers, and agile sprint delivery.',
     governance_philosophy: 'Adhering strictly to Power Platform Center of Excellence (CoE) framework, ALM solution layering, environment variables, and DLP security compliance.',
     migration_expertise: 'Cross-tenant SharePoint migrations using PowerShell/ShareGate, plus legacy modernization of InfoPath, Nintex, and SharePoint Designer workflows to Power Automate.'
@@ -575,255 +659,502 @@ export const INITIAL_MASTER_CV: MasterCV = {
 
 export const INITIAL_JOBS: JobListing[] = [
   {
+    id: 'job-301',
+    portal: 'greenhouse',
+    portalJobId: '8907990002',
+    url: 'https://job-boards.greenhouse.io/embed/job_app?for=databricks&token=8907990002',
+    externalApplyUrl: 'https://job-boards.greenhouse.io/embed/job_app?for=databricks&token=8907990002',
+    atsProvider: 'Greenhouse',
+    title: 'Delivery Solutions Architect (Data & AI)',
+    company: 'Databricks',
+    companySlug: 'databricks-canada',
+    location: 'Toronto, Ontario, Canada (Remote / Hybrid)',
+    remoteType: 'Remote',
+    postedDate: '2026-11-11',
+    capturedAt: '2026-11-11T12:30:00Z',
+    rawJdText:
+      'Verified Live Direct Greenhouse Application (#8907990002) at Databricks (Canada). Guide enterprise customers on Lakehouse architecture, Azure Databricks SQL MERGE ETL pipelines, Delta Lake, Unity Catalog governance, Power BI semantic integration, Python, and AI/RAG production deployments across North America.',
+    companyType: 'Global Data & AI Platform Leader',
+    reportsTo: 'Director — Field Engineering & Delivery Architecture (Canada)',
+    advertisedComp: 'CAD $145,000 - $175,000',
+    status: 'queued',
+    easyApply: false,
+    score: 4.9,
+    legitimacyTier: 'High Confidence',
+    finalDecision: 'Apply',
+    tailoredDocPath: 'data/cv_tailored/Master_Resume.pdf'
+  },
+  {
+    id: 'job-302',
+    portal: 'greenhouse',
+    portalJobId: '8585164002',
+    url: 'https://job-boards.greenhouse.io/embed/job_app?for=databricks&token=8585164002',
+    externalApplyUrl: 'https://job-boards.greenhouse.io/embed/job_app?for=databricks&token=8585164002',
+    atsProvider: 'Greenhouse',
+    title: 'Specialist Solutions Architect - AI/ML & Data',
+    company: 'Databricks',
+    companySlug: 'databricks-india',
+    location: 'Bengaluru, Karnataka, India',
+    remoteType: 'Hybrid',
+    postedDate: '2026-11-11',
+    capturedAt: '2026-11-11T12:25:00Z',
+    rawJdText:
+      'Verified Live Direct Greenhouse Application (#8585164002) at Databricks (Bengaluru, India). Partner with enterprise engineering teams to design production RAG pipelines, vector search, Azure Databricks SQL ETL, Python ML models, and Power BI / enterprise data analytics.',
+    companyType: 'Global Data & AI Platform Leader',
+    reportsTo: 'Head of Specialist Solutions Architecture (India)',
+    advertisedComp: 'INR 36L - 48L',
+    status: 'queued',
+    easyApply: false,
+    score: 4.9,
+    legitimacyTier: 'High Confidence',
+    finalDecision: 'Apply',
+    tailoredDocPath: 'data/cv_tailored/Master_Resume.pdf'
+  },
+  {
+    id: 'job-303',
+    portal: 'greenhouse',
+    portalJobId: '8132163',
+    url: 'https://job-boards.greenhouse.io/embed/job_app?for=okta&token=8132163',
+    externalApplyUrl: 'https://job-boards.greenhouse.io/embed/job_app?for=okta&token=8132163',
+    atsProvider: 'Greenhouse',
+    title: 'Senior Data Engineer (Enterprise Analytics)',
+    company: 'Okta',
+    companySlug: 'okta-india',
+    location: 'Bengaluru, Karnataka, India',
+    remoteType: 'Hybrid',
+    postedDate: '2026-11-11',
+    capturedAt: '2026-11-11T12:20:00Z',
+    rawJdText:
+      'Verified Live Direct Greenhouse Application (#8132163) at Okta (Bengaluru, India). Build scalable enterprise data pipelines using SQL, Python, cloud data warehouses/Databricks, semantic models, and automated BI analytics.',
+    companyType: 'Public Enterprise Cloud Identity Leader (NASDAQ: OKTA)',
+    reportsTo: 'Senior Engineering Manager — Enterprise Data & Analytics',
+    advertisedComp: 'INR 32L - 42L',
+    status: 'queued',
+    easyApply: false,
+    score: 4.8,
+    legitimacyTier: 'High Confidence',
+    finalDecision: 'Apply',
+    tailoredDocPath: 'data/cv_tailored/Master_Resume.pdf'
+  },
+  {
     id: 'job-101',
     portal: 'linkedin',
-    portalJobId: '401928312',
-    url: 'https://www.linkedin.com/jobs/view/401928312',
-    title: 'Lead AI Platform / Agentic Workflows Engineer',
-    company: 'Anthropic Labs Partner',
-    companySlug: 'anthropic-labs-partner',
-    location: 'Bengaluru / Remote',
-    remoteType: 'Remote',
-    postedDate: '2026-11-08',
-    capturedAt: '2026-11-09T08:30:00Z',
-    rawJdText: 'We are seeking a Lead AI Engineer to architect autonomous agentic workflows and LLMOps evaluation pipelines...',
-    companyType: 'Growth-stage startup / VC-backed',
-    reportsTo: 'VP of Engineering',
-    advertisedComp: 'INR 45L - 60L + ESOPs',
+    portalJobId: '4487744718',
+    url: 'https://www.linkedin.com/jobs/view/4487744718',
+    atsProvider: 'Workday External ATS',
+    title: 'Microsoft Power Platform Developer II',
+    company: 'Toro Technology Center - India',
+    companySlug: 'toro-technology-center-india',
+    location: 'Pune Division, Maharashtra, India',
+    remoteType: 'Hybrid',
+    postedDate: '2026-11-11',
+    capturedAt: '2026-11-11T08:30:00Z',
+    rawJdText:
+      'Job Purpose: The Power Platform Developer II designs, builds, and supports low-code business solutions on the Microsoft Power Platform — primarily Power Apps (Canvas & Model-Driven), Power Automate, and Copilot Studio — replacing manual and spreadsheet-driven processes with governed, scalable digital workflows integrated with SharePoint Online, Dataverse, and Power BI.',
+    companyType: 'Enterprise Technology Center',
+    reportsTo: 'Manager — Enterprise Business Applications',
+    advertisedComp: 'INR 24L - 32L',
+    status: 'queued',
+    easyApply: false,
+    score: 4.9,
+    legitimacyTier: 'High Confidence',
+    finalDecision: 'Apply',
+    tailoredDocPath: 'data/cv_tailored/Master_Resume.pdf'
+  },
+  {
+    id: 'job-102',
+    portal: 'linkedin',
+    portalJobId: '4487641538',
+    url: 'https://www.linkedin.com/jobs/view/4487641538',
+    externalApplyUrl: 'https://careers.persistent.com/',
+    atsProvider: 'Persistent Careers ATS',
+    title: 'Senior Power Platform Developer',
+    company: 'Persistent Systems',
+    companySlug: 'persistent-systems',
+    location: 'Pune Division, Maharashtra, India',
+    remoteType: 'Hybrid',
+    postedDate: '2026-11-11',
+    capturedAt: '2026-11-11T09:15:00Z',
+    rawJdText:
+      'About Persistent: We are an AI-led, platform-driven Digital Engineering and Enterprise Modernization partner. Seeking a Senior Power Platform Developer in Pune with deep expertise in Power Apps (Canvas & Model-Driven), Power Automate Cloud & Desktop RPA flows, Dataverse relational modeling, SharePoint Online, Custom Connectors, Managed Solutions ALM, and Power BI.',
+    companyType: 'Global Digital Engineering',
+    reportsTo: 'Delivery Director — Microsoft Practice',
+    advertisedComp: 'INR 26L - 34L',
+    status: 'tailored',
+    easyApply: false,
+    score: 4.9,
+    legitimacyTier: 'High Confidence',
+    finalDecision: 'Apply',
+    tailoredDocPath: 'data/cv_tailored/Master_Resume.pdf'
+  },
+  {
+    id: 'job-103',
+    portal: 'linkedin',
+    portalJobId: '4344708627',
+    url: 'https://www.linkedin.com/jobs/view/4344708627',
+    externalApplyUrl: 'https://burnsmcd.jobs/',
+    atsProvider: 'Burns & McDonnell Careers',
+    title: 'Senior Power Platform Developer',
+    company: 'Burns & McDonnell India',
+    companySlug: 'burns-mcdonnell-india',
+    location: 'Bengaluru, Karnataka, India',
+    remoteType: 'Hybrid',
+    postedDate: '2026-11-11',
+    capturedAt: '2026-11-11T10:00:00Z',
+    rawJdText:
+      'Description: We are seeking an experienced Power Platform Developer with 4-5 years of expertise in designing, developing, and deploying solutions using Microsoft Power Platform (Power Apps, Power Automate, and Power BI). The ideal candidate will be responsible for building scalable business applications, automating workflows, and delivering impactful data visualizations.',
+    companyType: 'Global Engineering & Enterprise Consulting',
+    reportsTo: 'Principal — Enterprise Applications',
+    advertisedComp: 'INR 25L - 33L',
+    status: 'applied',
+    easyApply: false,
+    score: 4.8,
+    legitimacyTier: 'High Confidence',
+    finalDecision: 'Apply',
+    tailoredDocPath: 'data/cv_tailored/Master_Resume.pdf'
+  },
+  {
+    id: 'job-104',
+    portal: 'linkedin',
+    portalJobId: '4477383896',
+    url: 'https://www.linkedin.com/jobs/view/4477383896',
+    externalApplyUrl: 'https://www.acuityanalytics.com/working-here/',
+    atsProvider: 'Acuity Careers ATS',
+    title: 'Senior Associate - SharePoint & Power Platform Developer',
+    company: 'Acuity Analytics',
+    companySlug: 'acuity-analytics',
+    location: 'Bengaluru, Karnataka, India',
+    remoteType: 'Hybrid',
+    postedDate: '2026-11-11',
+    capturedAt: '2026-11-11T10:30:00Z',
+    rawJdText:
+      'Job Purpose: The SharePoint Developer will be responsible for designing, developing, enhancing, and supporting enterprise SharePoint Online and Power Platform solutions (Power Apps, Power Automate, SPFx, PnP PowerShell, ShareGate migrations) that enable effective collaboration, document management, and workflow automation.',
+    companyType: 'Global Financial Research & Analytics',
+    reportsTo: 'Associate Director — Digital Workplace',
+    advertisedComp: 'INR 24L - 30L',
+    status: 'evaluated',
+    easyApply: false,
+    score: 4.8,
+    legitimacyTier: 'High Confidence',
+    finalDecision: 'Apply',
+    tailoredDocPath: 'data/cv_tailored/Master_Resume.pdf'
+  },
+  {
+    id: 'job-105',
+    portal: 'linkedin',
+    portalJobId: '4487695412',
+    url: 'https://www.linkedin.com/jobs/view/4487695412',
+    atsProvider: 'LinkedIn Easy Apply',
+    title: 'Azure Databricks Data Engineer',
+    company: 'WTW',
+    companySlug: 'wtw',
+    location: 'India (Hybrid)',
+    remoteType: 'Hybrid',
+    postedDate: '2026-11-11',
+    capturedAt: '2026-11-11T11:00:00Z',
+    rawJdText:
+      'Role and Responsibility: Build and maintain scalable pipelines with Azure Databricks, Python, and SQL. Orchestrate data movement and workflows with Azure Data Factory / Logic Apps pipelines, triggers, and integration runtimes. Ingest and transform large datasets from SQL Server and Azure SQL. Manage data governance and access control with Unity Catalog.',
+    companyType: 'Global FinTech & Advisory',
+    reportsTo: 'Lead Data Engineering Architect',
+    advertisedComp: 'INR 26L - 35L',
     status: 'queued',
     easyApply: true,
     score: 4.7,
     legitimacyTier: 'High Confidence',
     finalDecision: 'Apply',
-    tailoredDocPath: 'data/cv_tailored/Arjun_Sharma_AnthropicPartner_LeadAI.pdf'
+    tailoredDocPath: 'data/cv_tailored/Master_Resume.pdf'
   },
   {
-    id: 'job-102',
-    portal: 'naukri',
-    portalJobId: 'nk-998811',
-    url: 'https://www.naukri.com/job-listings-998811',
-    title: 'Staff Full-Stack & GenAI Engineer',
-    company: 'Zepto Tech',
-    companySlug: 'zepto-tech',
-    location: 'Bengaluru',
+    id: 'job-106',
+    portal: 'linkedin',
+    portalJobId: '4480223745',
+    url: 'https://www.linkedin.com/jobs/view/4480223745',
+    externalApplyUrl: 'https://www.anthesisgroup.com/careers/',
+    atsProvider: 'Anthesis Careers ATS',
+    title: 'Senior PowerBI Developer',
+    company: 'Anthesis Group',
+    companySlug: 'anthesis-group',
+    location: 'Pune Division, Maharashtra, India',
     remoteType: 'Hybrid',
-    postedDate: '2026-11-09',
-    capturedAt: '2026-11-09T09:15:00Z',
-    rawJdText: 'Looking for Staff Engineers with expertise in React, Node/Go, and LLM integrations. Must have 5+ years experience...',
-    companyType: 'Mature Tech / Unicorn',
-    reportsTo: 'Director of Platform Engineering',
-    advertisedComp: 'INR 50L - 70L',
-    status: 'tailored',
+    postedDate: '2026-11-11',
+    capturedAt: '2026-11-11T11:15:00Z',
+    rawJdText:
+      'Department: Enabling IT | Location: Pune, India | Description: We are seeking an experienced Senior Power BI Developer to join our Global Data Analytics & Reporting team. This role combines hands-on technical development with DAX, Power Query, semantic data modeling, Row-Level Security (RLS), and Azure SQL / Microsoft Fabric integration.',
+    companyType: 'Global Sustainability & Analytics Advisory',
+    reportsTo: 'Head of Global Data Analytics & Reporting',
+    advertisedComp: 'INR 24L - 30L',
+    status: 'discovered',
     easyApply: false,
-    score: 4.5,
+    score: 4.6,
     legitimacyTier: 'High Confidence',
-    finalDecision: 'Apply'
+    finalDecision: 'Apply',
+    tailoredDocPath: 'data/cv_tailored/Master_Resume.pdf'
   },
   {
-    id: 'job-103',
-    portal: 'greenhouse',
-    portalJobId: 'gh-ashby-334',
-    url: 'https://boards.greenhouse.io/vanna/jobs/334',
-    title: 'AI Forward Deployed Engineer (FDE)',
-    company: 'Vanna AI',
-    companySlug: 'vanna-ai',
-    location: 'Remote (Worldwide)',
-    remoteType: 'Remote',
-    postedDate: '2026-11-07',
-    capturedAt: '2026-11-08T14:20:00Z',
-    rawJdText: 'Join as an FDE to build customer-specific agents, enterprise RAG connections, and reliable tool calling...',
-    companyType: 'Growth-stage startup / VC-backed',
-    reportsTo: 'Head of Solutions',
-    advertisedComp: '$130,000 - $160,000 USD',
-    status: 'applied',
+    id: 'job-201',
+    portal: 'linkedin',
+    portalJobId: '4469605924',
+    url: 'https://www.linkedin.com/jobs/view/4469605924',
+    externalApplyUrl: 'https://careers.softchoice.com/',
+    atsProvider: 'Softchoice Careers ATS',
+    title: 'Sr. Power Platform Developer',
+    company: 'Softchoice',
+    companySlug: 'softchoice-canada',
+    location: 'Toronto, Ontario, Canada',
+    remoteType: 'Hybrid',
+    postedDate: '2026-11-11',
+    capturedAt: '2026-11-11T11:30:00Z',
+    rawJdText:
+      'Verified Active Canadian LinkedIn Requisition (#4469605924) at Softchoice (Toronto, Ontario, Canada). Seeking a Senior Power Platform Developer to architect and deliver enterprise Canvas & Model-Driven Power Apps, Power Automate Cloud & Desktop RPA workflows, Dataverse data models, Copilot Studio agents, SharePoint Online integrations, and Power BI analytics across North American enterprise clients.',
+    companyType: 'North American Cloud & Digital Workplace Leader (TSX: SFTC)',
+    reportsTo: 'Director — Microsoft Business Applications (Canada)',
+    advertisedComp: 'CAD $120,000 - $138,000',
+    status: 'queued',
+    easyApply: false,
+    score: 4.9,
+    legitimacyTier: 'High Confidence',
+    finalDecision: 'Apply',
+    tailoredDocPath: 'data/cv_tailored/Master_Resume.pdf'
+  },
+  {
+    id: 'job-202',
+    portal: 'linkedin',
+    portalJobId: '4487684684',
+    url: 'https://www.linkedin.com/jobs/view/4487684684',
+    atsProvider: 'MNP External ATS',
+    title: 'Solution Developer, Power Platform & D365',
+    company: 'MNP',
+    companySlug: 'mnp-canada',
+    location: 'Markham, Ontario, Canada (GTA)',
+    remoteType: 'Hybrid',
+    postedDate: '2026-11-11',
+    capturedAt: '2026-11-11T11:45:00Z',
+    rawJdText:
+      'Verified Active Canadian LinkedIn Requisition (#4487684684) at MNP Digital (Markham / Greater Toronto Area, Ontario, Canada). Looking for a Solution Developer specializing in Microsoft Power Platform (Power Apps, Power Automate, Power Pages, Dataverse, Copilot Studio) and SharePoint Online to build scalable digital solutions for Canadian enterprise and public-sector clients.',
+    companyType: 'National Canadian Professional Services & Digital Advisory Firm',
+    reportsTo: 'Partner — Digital & Enterprise Platforms (Ontario)',
+    advertisedComp: 'CAD $112,000 - $130,000',
+    status: 'tailored',
     easyApply: false,
     score: 4.8,
     legitimacyTier: 'High Confidence',
-    finalDecision: 'Apply'
+    finalDecision: 'Apply',
+    tailoredDocPath: 'data/cv_tailored/Master_Resume.pdf'
   },
   {
-    id: 'job-104',
+    id: 'job-203',
     portal: 'linkedin',
-    portalJobId: '401928999',
-    url: 'https://www.linkedin.com/jobs/view/401928999',
-    title: 'Senior Python & LLM Systems Engineer',
-    company: 'Razorpay',
-    companySlug: 'razorpay',
-    location: 'Bengaluru',
+    portalJobId: '4485864694',
+    url: 'https://www.linkedin.com/jobs/view/4485864694',
+    atsProvider: 'LinkedIn Easy Apply',
+    title: 'Sr. SharePoint Developer',
+    company: 'Apptoza Inc.',
+    companySlug: 'apptoza-inc',
+    location: 'Vancouver, British Columbia, Canada (Remote / Hybrid)',
     remoteType: 'Hybrid',
-    postedDate: '2026-11-09',
-    capturedAt: '2026-11-09T10:00:00Z',
-    rawJdText: 'Build AI-native fraud detection systems and merchant intelligence copilots...',
-    companyType: 'Enterprise / Mature Tech',
-    reportsTo: 'Engineering Manager',
-    advertisedComp: 'INR 38L - 48L',
+    postedDate: '2026-11-11',
+    capturedAt: '2026-11-11T12:00:00Z',
+    rawJdText:
+      'Verified Active Canadian LinkedIn Requisition (#4485864694) at Apptoza Inc. (Canada). Seeking a Senior SharePoint & Power Platform Developer with proven expertise in SharePoint Online, SPFx (React/TypeScript), ShareGate & PnP PowerShell migrations, InfoPath/Nintex modernization into Power Apps & Power Automate, and Microsoft 365 governance.',
+    companyType: 'Canadian Microsoft Cloud & SharePoint Consulting Partner',
+    reportsTo: 'VP — Microsoft 365 & SharePoint Practice',
+    advertisedComp: 'CAD $115,000 - $132,000',
     status: 'evaluated',
     easyApply: true,
-    score: 4.2,
+    score: 4.8,
     legitimacyTier: 'High Confidence',
-    finalDecision: 'Apply'
+    finalDecision: 'Apply',
+    tailoredDocPath: 'data/cv_tailored/Master_Resume.pdf'
   },
   {
-    id: 'job-105',
-    portal: 'naukri',
-    portalJobId: 'nk-441100',
-    url: 'https://www.naukri.com/job-listings-441100',
-    title: 'Lead Software Architect - AI Solutions',
-    company: 'Cognizant Digital',
-    companySlug: 'cognizant-digital',
-    location: 'Hyderabad',
-    remoteType: 'Onsite',
-    postedDate: '2026-11-01',
-    capturedAt: '2026-11-09T06:00:00Z',
-    rawJdText: 'Generic consulting role for banking client with vague responsibilities...',
-    companyType: 'Agency / Outsourcing Vendor',
-    reportsTo: 'Program Director',
-    advertisedComp: 'INR 28L - 32L',
-    status: 'discovered',
+    id: 'job-204',
+    portal: 'linkedin',
+    portalJobId: '4473024769',
+    url: 'https://www.linkedin.com/jobs/view/4473024769',
+    externalApplyUrl: 'https://www.nesto.ca/careers/',
+    atsProvider: 'nesto Careers ATS',
+    title: 'Senior Data Engineer, Analytics',
+    company: 'nesto',
+    companySlug: 'nesto-canada',
+    location: 'Canada (Montreal / Toronto / Hybrid)',
+    remoteType: 'Hybrid',
+    postedDate: '2026-11-11',
+    capturedAt: '2026-11-11T12:15:00Z',
+    rawJdText:
+      'Verified Active Canadian LinkedIn Requisition (#4473024769) at nesto (Canada). Seeking a Senior Data Engineer, Analytics experienced in Azure Databricks, SQL MERGE ETL pipelines, Python, Azure SQL, and Power BI semantic models & DAX dashboards to power Canadian fintech analytics.',
+    companyType: 'Leading Canadian FinTech & Digital Mortgage Platform',
+    reportsTo: 'Head of Data Engineering & Analytics',
+    advertisedComp: 'CAD $125,000 - $145,000',
+    status: 'queued',
     easyApply: false,
-    score: 2.8,
-    legitimacyTier: 'Proceed with Caution',
-    finalDecision: 'Skip'
+    score: 4.7,
+    legitimacyTier: 'High Confidence',
+    finalDecision: 'Apply',
+    tailoredDocPath: 'data/cv_tailored/Master_Resume.pdf'
   }
 ];
 
 export const SAMPLE_EVALUATION: EvaluationReport = {
   id: 'eval-101',
   jobId: 'job-101',
-  score: 4.7,
+  score: 4.9,
   finalDecision: 'Apply',
-  archetype: 'Agentic Workflows / Automation',
+  archetype: 'Power Platform & Enterprise AI Architect',
   legitimacyTier: 'High Confidence',
   workAuthTier: 'Not needed',
-  cvMatchScore: 4.8,
+  cvMatchScore: 4.9,
   northStarScore: 4.9,
-  compScore: 4.6,
-  cultureScore: 4.7,
+  compScore: 4.8,
+  cultureScore: 4.8,
   redFlagsDeduction: 0.0,
   evidenceConfidence: 'High',
   confidenceGaps: [],
   hardStops: [],
-  softGaps: ['Experience scaling bare-metal Kubernetes GPU clusters (AWS ECS/EKS available)'],
+  softGaps: ['Dynamics 365 Finance & Operations ERP module (mitigated by deep Dataverse, Custom Connectors & SAP/ERP RPA integration experience)'],
   topStrengths: [
-    'High-scale Playwright CDP multi-agent automation',
-    'Production RAG with sub-120ms vector retrieval',
-    'Proven 42% autonomous support deflection ($180k/yr saved)'
+    '8x Microsoft Certified including PL-600 (Solution Architect Expert), PL-400 (Developer Associate), and AZ-204',
+    'Production Azure AI Foundry (Content Understanding) invoice pipeline with 95%+ accuracy & 70% compute cost reduction at KPI Partners',
+    '4.5+ years delivering Power Apps, Power Automate (Cloud & Desktop RPA), Dataverse, SharePoint Online (15+ TB ShareGate migrations), and Databricks SQL ETL'
   ],
   blockASummary: {
-    archetype: 'Agentic Workflows / Automation',
-    domain: 'Enterprise AI Orchestration & Tool Use',
-    seniority: 'Lead / Staff',
-    workMode: 'Remote (India/Worldwide)',
-    teamSize: '8 - 12 engineers',
+    archetype: 'Power Platform & Enterprise AI Architect',
+    domain: 'Microsoft Business Applications, Copilot Studio & Azure AI Automation',
+    seniority: 'Senior / Lead (4.5+ Years)',
+    workMode: 'Hybrid (Pune / Bengaluru / Remote)',
+    teamSize: '8 - 14 engineers & solution architects',
     workAuth: 'Not needed (Authorized in India)',
-    tldr: 'Direct ownership of agent runtime, Playwright execution, and tool-calling reliability.'
+    tldr: 'Direct 1:1 alignment with Shubham Yadav’s Master CV across Power Apps, Power Automate, Dataverse, SharePoint Online, Copilot Studio, Azure AI Foundry, and PL-600/PL-400 certifications.'
   },
   blockBRequirements: [
     {
-      requirement: 'Multi-agent orchestration with tool calling & human-in-the-loop checkpoints',
+      requirement: 'Power Apps (Canvas & Model-Driven), Dataverse & Power Automate Cloud/Desktop RPA',
       importance: 'critical',
       evidence: 'stated',
       match: 'strong',
-      jdSignal: 'Must have hands-on experience designing multi-agent workflows with tool-calling and human intervention checkpoints.',
+      jdSignal: '4+ years building enterprise Canvas & Model-Driven Power Apps, Power Automate flows, and Dataverse security models.',
       gap: null,
       mitigation: null
     },
     {
-      requirement: 'Playwright / Headless Chromium automation via CDP at scale',
+      requirement: 'Copilot Studio, AI Builder & Azure AI Foundry Document Automation',
+      importance: 'critical',
+      evidence: 'stated',
+      match: 'strong',
+      jdSignal: 'Hands-on experience deploying Copilot Studio agents and Azure AI Foundry / AI Builder document extraction workflows.',
+      gap: null,
+      mitigation: null
+    },
+    {
+      requirement: 'SharePoint Online Architecture, SPFx & Legacy Migration (ShareGate / PowerShell)',
       importance: 'high',
       evidence: 'stated',
       match: 'strong',
-      jdSignal: 'Demonstrated expertise controlling web environments via Playwright/Puppeteer with stealth evasion.',
+      jdSignal: 'Integrate SharePoint Online lists/libraries, SPFx web parts, and migrate legacy InfoPath/Nintex forms.',
       gap: null,
       mitigation: null
     },
     {
-      requirement: 'Sub-second vector retrieval & evaluation pipelines',
+      requirement: 'Microsoft Power Platform Certifications (PL-600, PL-400, AZ-204)',
       importance: 'high',
-      evidence: 'structural',
+      evidence: 'stated',
       match: 'strong',
-      jdSignal: 'Production RAG and prompt evaluation benchmarks.',
+      jdSignal: 'PL-600 Solution Architect or PL-400 Developer certification strongly preferred.',
       gap: null,
       mitigation: null
-    },
-    {
-      requirement: 'Bare-metal Kubernetes GPU cluster management',
-      importance: 'meaningful',
-      evidence: 'structural',
-      match: 'partial',
-      jdSignal: 'Bonus: Experience with on-prem GPU orchestrations.',
-      gap: 'Candidate experience is in AWS ECS/EKS Fargate rather than bare-metal k8s',
-      mitigation: 'Emphasize containerized worker lifecycle management and cloud cost optimization.'
     }
   ],
   blockCStrategy: {
-    levelFit: 'Peer / Natural Lead',
-    positioning: 'Lead Automation Architect who bridges customer discovery, agentic design, and fault-tolerant production infrastructure.',
-    downlevelDefense: 'Highlight 10M+ daily events throughput and verified $180k annual cost savings at HyperFlow.'
+    levelFit: 'Senior Developer / Solution Architect (PL-600 Certified)',
+    positioning: 'Microsoft PL-600 Solution Architect & Senior Power Platform/AI Engineer who combines low-code velocity (Power Apps, Power Automate, Copilot Studio) with pro-code Azure Data & AI engineering (Azure AI Foundry, Databricks SQL, Python RAG).',
+    downlevelDefense: 'Anchor on PL-600 Solution Architect certification, CoE governance leadership at Accenture, and end-to-end ownership of clinical & financial AI pipelines at KPI Partners.'
   },
   blockDComp: {
-    companyType: 'Growth-stage startup / VC-backed',
+    companyType: 'Enterprise Microsoft Partner / Global Consulting',
     compReliability: 'High',
-    advertisedComp: 'INR 45L - 60L + ESOPs',
-    guaranteedBase: 'INR 45L',
-    variable: 'INR 10L - 15L performance bonus',
-    marketPercentile: 'Top 8% in Indian AI hiring market'
+    advertisedComp: 'INR 26L - 34L',
+    guaranteedBase: 'INR 26L - 30L',
+    variable: 'INR 3L - 4L performance bonus',
+    marketPercentile: 'Top 10% for 4.5+ YOE Power Platform & Azure AI Engineers in Pune/Bengaluru'
   },
   blockEPersonalization: [
     {
       id: 'e1',
-      section: 'Resume Headline / Title',
-      currentState: 'Senior AI Systems & Full-Stack Engineer',
-      proposedChange: 'Lead AI Platform & Agentic Workflows Architect',
-      why: 'Directly mirrors the JD role title and positions as end-to-end agentic automation specialist.'
+      section: 'KPI Partners — Bullet #1 (Power Apps & Clinical Study Intake)',
+      currentState:
+        'Developed and deployed a scalable Power Apps solution integrated with SharePoint Online to streamline clinical study intake and regulatory tracking, reducing processing time by 60%.',
+      proposedChange:
+        'Architected and deployed a governed Power Platform solution (Canvas & Model-Driven Power Apps, Dataverse, and Power Automate cloud flows) integrated with SharePoint Online to automate clinical study intake and multi-tier regulatory approvals, reducing end-to-end processing time by 60%.',
+      why: 'Aligns with JD requirement for Canvas/Model-Driven Power Apps & Dataverse governance. | Interview Talking Point: Walk through how Power Fx validation and multi-stage Power Automate approvals eliminated 15+ hrs/week of manual tracking at KPI Partners.'
     },
     {
       id: 'e2',
-      section: 'HyperFlow Tech (Bullet 1)',
-      currentState: 'Architected multi-agent customer support automation platform...',
-      proposedChange: 'Promoted Playwright CDP tool calling and 42% deflection metric to bullet #1',
-      why: 'Directly aligns with the critical requirement #1 in the JD.'
+      section: 'KPI Partners — Bullet #6 (Azure AI Foundry & Copilot Studio)',
+      currentState:
+        'Engineered an automated invoice processing pipeline using Azure AI Foundry (Content Understanding) to extract structured data from complex, multi-page financial PDFs with 95%+ accuracy.',
+      proposedChange:
+        'Engineered an enterprise AI document-understanding and Copilot Studio workflow pipeline using Azure AI Foundry (Content Understanding) and Power Automate to extract structured data from multi-page financial PDFs with 95%+ accuracy and 70% lower compute cost.',
+      why: 'Bridges JD requirement for Copilot Studio & AI Builder with your real Azure AI Foundry pipeline. | Interview Talking Point: Explain how you replaced heavy LLM token calls with Azure AI Foundry Content Understanding + Power Automate orchestration, cutting compute costs by 70%.'
+    },
+    {
+      id: 'e3',
+      section: 'Accenture Solutions — Bullet #1 & #2 (SharePoint Online & InfoPath/Nintex Modernization)',
+      currentState:
+        'Migrated 40+ legacy InfoPath and Nintex workflows to modern Power Apps and Power Automate solutions, improving maintainability and mobile responsiveness.',
+      proposedChange:
+        'Led enterprise SharePoint Online modernization (15+ TB via ShareGate & PnP PowerShell with 99.9% fidelity) and refactored 40+ legacy InfoPath and Nintex workflows into responsive Power Apps, SPFx web parts, and Power Automate Cloud/Desktop RPA flows.',
+      why: 'Directly matches enterprise migration and RPA automation requirements using 100% real Accenture deliverables. | Interview Talking Point: Discuss your PowerShell pre-migration inventory scripts, ShareGate taxonomy mapping, and attended/unattended Power Automate Desktop RPA bots.'
     }
   ],
   blockFInterview: {
     starStories: [
       {
         id: 1,
-        requirement: 'Multi-agent orchestration & tool calling',
-        story: 'Playwright Customer Support Deflection Engine',
-        s: 'HyperFlow spent $15,000/month on repetitive L1 support tickets.',
-        t: 'Design an autonomous agent with human escalation checkpoints.',
-        a: 'Engineered Playwright CDP workers driven by Gemini 1.5 JSON function calling with strict schema validation.',
-        r: 'Achieved 42% autonomous resolution rate with zero data leaks, saving $180k/yr.',
-        reflection: 'Deterministic schema validation on tool parameters eliminated 98% of hallucinations.'
+        requirement: 'Enterprise AI Document Extraction & Workflow Orchestration',
+        story: 'Azure AI Foundry Invoice Pipeline at KPI Partners (95%+ Accuracy, 70% Cost Reduction)',
+        s: 'Financial operations teams manually processed complex multi-page vendor invoices, while naive LLM prompts were expensive and inconsistent on tabular layouts.',
+        t: 'Design a deterministic, cost-efficient automated extraction and approval pipeline integrated with Power Platform and Azure.',
+        a: 'Engineered an ingestion pipeline using Azure AI Foundry (Content Understanding), orchestrated via Power Automate and Azure Functions with schema validation and exception queues.',
+        r: 'Achieved 95%+ field extraction accuracy and reduced compute costs by 70% compared to standard LLM calls.',
+        reflection: 'Combining structured Azure AI Content Understanding with Power Automate human-in-the-loop review gates gives enterprise auditability without token bloat.'
+      },
+      {
+        id: 2,
+        requirement: 'Scalable Power Apps & Dataverse Clinical Workflow Automation',
+        story: 'Clinical Study Intake & Regulatory Tracking Platform at KPI Partners',
+        s: 'Clinical study intake relied on fragmented spreadsheets and email threads, causing bottlenecks and delayed regulatory handoffs.',
+        t: 'Deliver a unified, role-based intake and approval application with full audit history.',
+        a: 'Built a scalable Power Apps solution integrated with SharePoint Online and Power Automate multi-tier approval flows, enforcing Power Fx field validation and RBAC.',
+        r: 'Reduced end-to-end clinical study intake processing time by 60% and saved 15+ hours/week of manual coordination.',
+        reflection: 'Designing clean delegation-friendly queries and modular Power Automate child flows ensured zero throttling as record volume scaled.'
       }
     ],
-    caseStudy: 'Designing a self-healing browser worker that recovers gracefully from DOM mutations and rate limits.',
+    caseStudy: 'Designing a governed Power Platform & Azure AI Foundry architecture with DLP policies, Managed Solutions ALM, and Databricks SQL analytics sync.',
     redFlagQa: [
       {
-        q: 'Why specialize in agentic workflows over traditional full-stack software?',
-        a: 'Deterministic code and probabilistic LLMs are complimentary; building resilient systems at that boundary is where the highest operational leverage lives.'
+        q: 'How do you decide between low-code Power Automate/Copilot Studio and pro-code Azure Functions/Databricks?',
+        a: 'I use Power Apps, Copilot Studio, and Power Automate for user experience, human approvals, and M365 connector orchestration, and offload heavy multi-tab file parsing, SQL MERGE ETL, or custom FAISS vector retrieval to Azure Functions, Databricks, and Python.'
       }
     ]
   },
   blockGLegitimacy: {
-    postingFreshness: 'Active (Posted 24 hours ago)',
-    descriptionQuality: 'High specificity, explicit architectural requirements, no marketing fluff',
-    repostSignals: 'First seen requisition',
-    aiBuzzwordMismatch: 'Consistent (Deep technical stack specified)',
-    payTransparency: 'Compliant (Narrow transparent range 45L - 60L)',
-    recruiterVerification: 'Hiring Manager verified on LinkedIn via official company domain'
+    postingFreshness: 'Active (Posted within 24 hours)',
+    descriptionQuality: 'High specificity — lists concrete Microsoft certifications (PL-600/PL-400) and architectural deliverables',
+    repostSignals: 'Verified new requisition',
+    aiBuzzwordMismatch: 'Consistent (Power Platform + Copilot Studio + Azure AI Foundry stack)',
+    payTransparency: 'Aligned with Pune/Bengaluru Senior Power Platform & Azure AI market (26L - 34L)',
+    recruiterVerification: 'Verified Microsoft Partner talent acquisition team'
   },
   blockHAnswers: {
-    why_apply: 'I have dedicated the last 3 years to building resilient multi-agent systems and Playwright automation. Having achieved 42% autonomous deflection in production at HyperFlow, this role directly matches my focus on production-grade agentic architectures.',
-    expected_ctc: 'INR 50L - 55L negotiable based on equity component',
-    notice_period: '60 days (buyout negotiable for immediate joining)'
+    why_apply:
+      'With 4.5+ years of experience across KPI Partners, Wilfrid Laurier University, and Accenture—and 8 Microsoft certifications including PL-600 Solution Architect, PL-400, and AZ-204—I have delivered 60% faster clinical workflows in Power Apps/Power Automate, 95%+ accuracy document pipelines in Azure AI Foundry, and 15+ TB SharePoint migrations.',
+    expected_ctc: 'INR 28L - 32L (Negotiable based on variable/bonus structure)',
+    notice_period: '60 days (Notice buyout available for expedited 30-day joining)'
   },
   riskSummary: {
     legitimacy: 'High Confidence',
-    classification: 'Clear (Full-time W2/Permanent employee)',
+    classification: 'Clear (Full-time Permanent Role)',
     culture: 'Pass',
-    interview_redflags: 'None',
+    interview_redflags: 'None — 100% of tailored bullets are grounded in real KPI Partners, WLU & Accenture projects',
     ai_infra: 'Consistent',
     fixed_term: 'Not detected'
   },
@@ -834,29 +1165,31 @@ export const SAMPLE_EVALUATION: EvaluationReport = {
     culture: 'supported',
     red_flags: 'supported'
   },
-  machineSummaryYaml: `company: "Anthropic Labs Partner"
-role: "Lead AI Platform / Agentic Workflows Engineer"
-score: 4.7
+  machineSummaryYaml: `company: "Avanade (Microsoft Partner)"
+role: "Senior Power Platform & Copilot Studio Developer"
+score: 4.9
 legitimacy_tier: "High Confidence"
-archetype: "Agentic Workflows / Automation"
+archetype: "Power Platform & Enterprise AI Architect"
 final_decision: "Apply"
 hard_stops: []
 soft_gaps:
-  - "Kubernetes bare-metal cluster management"
+  - "Dynamics 365 F&O module (mitigated by Dataverse & ERP RPA integration)"
 top_strengths:
-  - "High-scale Playwright multi-agent experience"
-  - "Production RAG with sub-120ms latency"
+  - "8x Microsoft Certified (PL-600, PL-400, AZ-204)"
+  - "Azure AI Foundry & Power Automate pipelines (95%+ accuracy, 70% cost reduction)"
+  - "4.5+ yrs Power Apps, SharePoint Online (15+ TB ShareGate), Databricks SQL & Python RAG"
 work_auth: "not_needed"
-advertised_comp: "INR 45L - 60L + ESOPs"`,
-  fullMarkdownReport: `# Evaluation: Anthropic Labs Partner — Lead AI Platform Engineer
+advertised_comp: "INR 26L - 34L"`,
+  fullMarkdownReport: `# Evaluation: Avanade — Senior Power Platform & Copilot Studio Developer
 
 **Date:** 2026-11-09
-**Archetype:** Agentic Workflows / Automation
-**Score:** 4.7/5
+**Archetype:** Power Platform & Enterprise AI Architect
+**Score:** 4.9/5.0
 **Decision:** Apply
 **Legitimacy:** High Confidence
-**Work Auth:** ➖ Not needed
+**Work Auth:** ➖ Not needed (Authorized in India)
 
-**Apply.** Outstanding alignment with candidate primary strengths in Playwright automation and LLMOps.`,
+**Apply.** Direct 1:1 match with Shubham Yadav's 4.5+ years of experience at KPI Partners, Wilfrid Laurier University, and Accenture, backed by PL-600, PL-400, and AZ-204 certifications.`,
   evaluatedAt: '2026-11-09T08:35:00Z'
 };
+
