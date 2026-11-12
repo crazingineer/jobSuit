@@ -1,5 +1,8 @@
 {
   "name": "jobSuite — Autonomous Career-Ops & ATS Engine",
   "description": "Local-first job discovery, career-ops A–H evaluation, grounded ATS PDF compiler, and stealth CDP auto-applier for LinkedIn, Naukri, HiringCafe, Workday, and Greenhouse.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

@@ -28,9 +28,14 @@ app.use('/data/cv_tailored', express.static(path.resolve(process.cwd(), 'data', 
 // Initialize DB on server start
 initDatabase();
 
-// Ensure Master_Resume.pdf and Master_Resume.tex are compiled with Jake's Resume template on startup
-(async () => {
+// Ensure Master_Resume.pdf and Master_JakesResume.tex exist without blocking server boot
+setTimeout(async () => {
   try {
+    const pdfPath = path.resolve(process.cwd(), 'data', 'cv_tailored', 'Master_Resume.pdf');
+    const texPath = path.resolve(process.cwd(), 'data', 'cv_tailored', 'Master_JakesResume.tex');
+    if (fs.existsSync(pdfPath) && fs.statSync(pdfPath).size > 1000 && fs.existsSync(texPath)) {
+      return;
+    }
     const vaultRow = db.prepare('SELECT * FROM personal_vault WHERE id = 1').get() as any;
     const cvRow = db.prepare("SELECT * FROM master_cv WHERE id = 'cv-master-v1'").get() as any;
     if (vaultRow && cvRow) {
@@ -41,7 +46,7 @@ initDatabase();
   } catch (err: any) {
     console.warn(`[Server Startup] Could not pre-compile Jake's Resume PDF: ${err.message}`);
   }
-})();
+}, 2500);
 
 // 1. System Health & Dashboard Status
 app.get('/api/status', async (req, res) => {
@@ -180,7 +185,7 @@ app.get('/api/jobs', (req, res) => {
   }
 });
 
-// 2b. Verify & Refresh Live Active Jobs via LinkedIn Public Guest API
+// 2b. Verify & Refresh Live Active Jobs via LinkedIn Public Guest API & Naukri Discovery
 app.post('/api/jobs/refresh-live', async (req, res) => {
   try {
     const keywords = req.body?.keywords || 'Power Platform Developer';
@@ -189,7 +194,7 @@ app.post('/api/jobs/refresh-live', async (req, res) => {
       keywords,
       location,
       evaluateImmediately: true,
-      sources: ['linkedin']
+      sources: ['linkedin', 'naukri']
     });
     const rows = db.prepare(`
       SELECT j.*, e.score, e.legitimacy_tier as legitimacyTier, e.final_decision as finalDecision,
@@ -887,11 +892,18 @@ app.post('/api/rules', (req, res) => {
   }
 });
 
-// 12. System Settings API
+// 12. System Settings API (Zero API Key Persistence for Public GitHub Repo Security)
 app.get('/api/settings', (req, res) => {
   try {
     const row = db.prepare('SELECT * FROM system_settings WHERE id = 1').get() as any;
-    res.json({ success: true, settings: row || null });
+    const safeSettings = row
+      ? {
+          ...row,
+          llm_api_key_encrypted: undefined,
+          hasEnvGeminiKey: Boolean(process.env.GEMINI_API_KEY)
+        }
+      : null;
+    res.json({ success: true, settings: safeSettings });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -902,17 +914,18 @@ app.post('/api/settings', (req, res) => {
     const { settings } = req.body;
     if (!settings) return res.status(400).json({ success: false, error: 'Missing settings' });
 
+    // Security invariant: never persist Gemini API keys in SQLite (always NULL)
     db.prepare(`
       INSERT INTO system_settings (
         id, llm_provider, llm_model, llm_api_key_encrypted, chrome_user_data_dir,
         edge_user_data_dir, preferred_browser, naukri_refresh_time, naukri_refresh_jitter_mins, updated_at
       ) VALUES (
-        1, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now')
+        1, ?, ?, NULL, ?, ?, ?, ?, ?, datetime('now')
       )
       ON CONFLICT(id) DO UPDATE SET
         llm_provider = excluded.llm_provider,
         llm_model = excluded.llm_model,
-        llm_api_key_encrypted = excluded.llm_api_key_encrypted,
+        llm_api_key_encrypted = NULL,
         chrome_user_data_dir = excluded.chrome_user_data_dir,
         edge_user_data_dir = excluded.edge_user_data_dir,
         preferred_browser = excluded.preferred_browser,
@@ -921,8 +934,7 @@ app.post('/api/settings', (req, res) => {
         updated_at = datetime('now')
     `).run(
       settings.llmProvider || 'gemini',
-      settings.llmModel || 'gemini-1.5-flash',
-      settings.llmApiKey || '',
+      settings.llmModel || 'gemini-3.8-flash',
       settings.chromeProfilePath || '',
       settings.edgeProfilePath || '',
       settings.preferredBrowser || 'chrome',
@@ -930,7 +942,7 @@ app.post('/api/settings', (req, res) => {
       settings.naukriJitter || 15
     );
 
-    res.json({ success: true, message: 'System settings saved to SQLite' });
+    res.json({ success: true, message: 'System settings saved to SQLite (Zero API Keys Stored)' });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

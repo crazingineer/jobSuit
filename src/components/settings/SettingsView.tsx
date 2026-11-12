@@ -13,7 +13,7 @@ import { clientApi } from '@/lib/api';
 
 export const SettingsView: React.FC = () => {
   const [llmProvider, setLlmProvider] = useState<'gemini' | 'ollama'>('gemini');
-  const [geminiKey, setGeminiKey] = useState('');
+  const [hasEnvGeminiKey, setHasEnvGeminiKey] = useState<boolean>(true);
   const [ollamaHost, setOllamaHost] = useState('http://localhost:11434');
 
   const [chromeProfilePath, setChromeProfilePath] = useState(
@@ -54,7 +54,7 @@ export const SettingsView: React.FC = () => {
           const s = res.settings;
           if (s.llm_provider === 'ollama') setLlmProvider('ollama');
           else setLlmProvider('gemini');
-          if (s.llm_api_key_encrypted) setGeminiKey(s.llm_api_key_encrypted);
+          if (typeof s.hasEnvGeminiKey === 'boolean') setHasEnvGeminiKey(s.hasEnvGeminiKey);
           if (s.chrome_user_data_dir) setChromeProfilePath(s.chrome_user_data_dir);
           if (s.edge_user_data_dir) setEdgeProfilePath(s.edge_user_data_dir);
           if (s.preferred_browser) setPreferredBrowser(s.preferred_browser);
@@ -117,7 +117,6 @@ export const SettingsView: React.FC = () => {
     try {
       await clientApi.saveSettings({
         llmProvider,
-        llmApiKey: geminiKey,
         chromeProfilePath,
         edgeProfilePath,
         preferredBrowser,
@@ -125,7 +124,7 @@ export const SettingsView: React.FC = () => {
         naukriJitter
       });
       setSaveSuccess(true);
-      showBanner('System settings saved to SQLite.');
+      showBanner('System settings saved to SQLite (Zero API Keys Stored).');
       setTimeout(() => setSaveSuccess(false), 2500);
     } finally {
       setIsSaving(false);
@@ -152,7 +151,7 @@ export const SettingsView: React.FC = () => {
             Settings & Runtime Configuration
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Gemini / Local Ollama Engine • Persistent Chrome CDP Profile Manager • Windows Task Scheduler Hook
+            Server-Side Gemini / Local Ollama Engine • Public GitHub Secret Protection • Chrome CDP Profile Manager
           </p>
         </div>
 
@@ -176,23 +175,25 @@ export const SettingsView: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* LLM Provider (Gemini + Ollama only — no OpenAI/Anthropic required) */}
+        {/* LLM Provider (Server-Side Env Variable + Local Ollama — Zero Stored Keys) */}
         <div className="p-5 rounded-2xl bg-white dark:bg-[#111522] border border-slate-200/80 dark:border-slate-800/80 shadow-xs space-y-4">
           <div className="flex items-center justify-between pb-2.5 border-b border-slate-100 dark:border-slate-800/80">
             <h3 className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
               <Key className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-              Evaluation Reasoning Engine
+              AI Vision & Evaluation Engine (Public Repo Safe)
             </h3>
-            <span className="text-[11px] font-mono text-indigo-600 dark:text-indigo-300 font-medium">Zero External Keys Required</span>
+            <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold">
+              Zero Stored Keys in DB / Git
+            </span>
           </div>
 
           <div className="space-y-3.5">
             <div>
-              <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1.5">Active Reasoning Provider</label>
+              <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block mb-1.5">Active Reasoning & Vision Provider</label>
               <div className="grid grid-cols-2 gap-2.5">
                 {[
                   { id: 'ollama', label: 'Local Ollama (HP AM0238TX)', sub: 'qwen2.5vl:7b Vision • RTX 5060 8GB' },
-                  { id: 'gemini', label: 'Google Gemini', sub: 'Gemini Flash Multimodal' }
+                  { id: 'gemini', label: 'Google Gemini (Server Env)', sub: 'gemini-3.8-flash Multimodal' }
                 ].map((p) => (
                   <button
                     key={p.id}
@@ -211,15 +212,16 @@ export const SettingsView: React.FC = () => {
             </div>
 
             {llmProvider === 'gemini' && (
-              <div className="space-y-1.5">
-                <label className="text-xs text-slate-500 dark:text-slate-400 font-mono block">Optional Custom Gemini Key</label>
-                <input
-                  type="password"
-                  value={geminiKey}
-                  onChange={(e) => setGeminiKey(e.target.value)}
-                  placeholder="Uses environment GEMINI_API_KEY automatically if left blank"
-                  className="w-full h-9 px-3 rounded-lg bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-slate-100 font-mono focus:border-indigo-500 outline-none"
-                />
+              <div className="p-3 rounded-xl bg-emerald-50/80 dark:bg-emerald-950/25 border border-emerald-200 dark:border-emerald-500/30 text-[11px] font-mono text-emerald-900 dark:text-emerald-200 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold">Server-Side Environment Variable Only</span>
+                  <span className="px-2 py-0.5 rounded bg-emerald-600/15 text-emerald-700 dark:text-emerald-300 font-bold">
+                    {hasEnvGeminiKey ? 'process.env.GEMINI_API_KEY Active' : 'Env Var Ready'}
+                  </span>
+                </div>
+                <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+                  <strong>Public GitHub Repo Protection:</strong> Your Gemini API key is read exclusively on the Node.js backend via <code className="text-indigo-600 dark:text-indigo-300">process.env.GEMINI_API_KEY</code> (from AI Studio runtime secrets or your local untracked <code className="text-indigo-600 dark:text-indigo-300">.env</code> file). It is <strong>never</strong> stored in SQLite (<code className="text-indigo-600 dark:text-indigo-300">data/jobsuite.db</code>), never accepted via UI inputs, and never bundled into client JavaScript.
+                </p>
               </div>
             )}
 
@@ -247,7 +249,7 @@ export const SettingsView: React.FC = () => {
             )}
 
             <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#141722] border border-slate-200/80 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-400 font-mono leading-relaxed">
-              No OpenAI or Anthropic API keys are required. Local Set-of-Mark DOM reasoning & career-ops evaluation run with zero external API cost.
+              Both <code className="text-slate-800 dark:text-slate-200">.env</code> and <code className="text-slate-800 dark:text-slate-200">data/*.db</code> are excluded in <code className="text-slate-800 dark:text-slate-200">.gitignore</code> so no secret or personal vault token can ever be committed or retrieved from your public GitHub repository.
             </div>
           </div>
         </div>

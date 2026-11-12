@@ -87,4 +87,29 @@ describe('Job Channel Classifier & LinkedIn Apply Type Parser', () => {
     assert.equal(emptyParsed.isEasyApply, false);
     assert.equal(emptyParsed.applyType, 'offsite_external_ats');
   });
+
+  it('classifies Naukri Quick Apply and Naukri Company Site postings accurately', () => {
+    const naukriQuick = classifyJobChannel({
+      portal: 'naukri',
+      easyApply: true,
+      url: 'https://www.naukri.com/job-listings-microsoft-power-platform-developer-ltimindtree-pune-3-to-6-years-4489012',
+      atsProvider: 'Naukri Quick Apply'
+    });
+    assert.equal(naukriQuick.badgeLabel, 'Naukri · Quick Apply');
+    assert.equal(naukriQuick.actionLabel, 'Naukri Co-Pilot');
+
+    const naukriCompanySite = classifyJobChannel({
+      portal: 'naukri',
+      easyApply: false,
+      url: 'https://www.naukri.com/job-listings-senior-developer-power-platform-anthesis-group-hyderabad-pune-5-to-8-years-6a590179',
+      externalApplyUrl: 'https://anthesisgroup.pinpointhq.com/en/postings/6a590179-42f5-4ec5-9b76-0a769fc2fe8d',
+      atsProvider: 'Pinpoint HQ ATS'
+    });
+    assert.equal(naukriCompanySite.badgeLabel, 'Naukri · Company Site ↗');
+    assert.equal(naukriCompanySite.actionLabel, 'Naukri Co-Pilot');
+    assert.equal(
+      naukriCompanySite.targetApplyUrl,
+      'https://anthesisgroup.pinpointhq.com/en/postings/6a590179-42f5-4ec5-9b76-0a769fc2fe8d'
+    );
+  });
 });

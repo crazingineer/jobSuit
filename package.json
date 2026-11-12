@@ -16,6 +16,7 @@
     "db:init": "tsx -e \"import { initDatabase } from './engine/db.ts'; initDatabase(); console.log('Database initialized successfully.');\""
   },
   "dependencies": {
+    "@google/genai": "^3.2.0",
     "@tauri-apps/api": "^2.10.1",
     "better-sqlite3": "^13.0.3",
     "cors": "^2.8.5",

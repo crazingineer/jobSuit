@@ -30,6 +30,7 @@ export const JobPipeline: React.FC = () => {
   const [selectedJob, setSelectedJob] = useState<JobListing | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [regionFilter, setRegionFilter] = useState<'all' | 'IN' | 'CA'>('all');
+  const [portalFilter, setPortalFilter] = useState<'all' | 'naukri' | 'linkedin' | 'greenhouse'>('all');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [syncBanner, setSyncBanner] = useState<string | null>(null);
 
@@ -49,12 +50,12 @@ export const JobPipeline: React.FC = () => {
 
   const handleSyncLiveJobs = async (targetLocation: 'India' | 'Canada' = 'India') => {
     setIsRefreshing(true);
-    setSyncBanner(`Querying LinkedIn Public Guest Jobs API (${targetLocation}) & verifying HTTP 200 active postings...`);
+    setSyncBanner(`Querying LinkedIn & Naukri Job Discovery (${targetLocation}) & verifying HTTP 200 active postings...`);
     try {
       const res = await clientApi.refreshLiveJobs('Power Platform Developer', targetLocation);
       if (res?.jobs && res.jobs.length > 0) {
         setJobs(res.jobs);
-        setSyncBanner(`Verified ${res.jobs.length} live HTTP-200 active postings across India & Canada.`);
+        setSyncBanner(`Verified ${res.jobs.length} live HTTP-200 active postings across Naukri, LinkedIn & Greenhouse.`);
       } else {
         await loadJobs();
         setSyncBanner(`Verified active HTTP-200 ${targetLocation} job postings.`);
@@ -74,6 +75,9 @@ export const JobPipeline: React.FC = () => {
 
   const indiaCount = jobs.filter((j) => !isCanadianTargetLocation(j.location)).length;
   const canadaCount = jobs.filter((j) => isCanadianTargetLocation(j.location)).length;
+  const naukriCount = jobs.filter((j) => j.portal === 'naukri').length;
+  const linkedinCount = jobs.filter((j) => j.portal === 'linkedin').length;
+  const greenhouseCount = jobs.filter((j) => j.portal === 'greenhouse').length;
 
   const filteredJobs = jobs.filter((job) => {
     const matchesSearch =
@@ -85,7 +89,8 @@ export const JobPipeline: React.FC = () => {
       regionFilter === 'all' ||
       (regionFilter === 'CA' && isCa) ||
       (regionFilter === 'IN' && !isCa);
-    return matchesSearch && matchesRegion;
+    const matchesPortal = portalFilter === 'all' || job.portal === portalFilter;
+    return matchesSearch && matchesRegion && matchesPortal;
   });
 
   return (
@@ -97,11 +102,11 @@ export const JobPipeline: React.FC = () => {
             Job Pipeline &amp; Application Tracker
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">
-            HTTP-200 Verified Postings ({filteredJobs.length} shown) · 🇮🇳 India (+91 7276085461) &amp; 🇨🇦 Canada (+1 289-890-3999 · Work Permit)
+            HTTP-200 Verified Postings ({filteredJobs.length} shown) · Naukri ({naukriCount}) · LinkedIn ({linkedinCount}) · Greenhouse ({greenhouseCount})
           </p>
         </div>
 
-        {/* Search, Region Filter, Refresh & View Switcher */}
+        {/* Search, Portal Filter, Region Filter, Refresh & View Switcher */}
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -111,8 +116,52 @@ export const JobPipeline: React.FC = () => {
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Filter roles or cities..."
               aria-label="Filter pipeline roles or cities"
-              className="h-9 w-44 pl-8 pr-2.5 rounded-xl bg-white dark:bg-[#111522] border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 transition-colors"
+              className="h-9 w-40 pl-8 pr-2.5 rounded-xl bg-white dark:bg-[#111522] border border-slate-200 dark:border-slate-800 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 transition-colors"
             />
+          </div>
+
+          {/* Portal Filter (All | Naukri | LinkedIn | Greenhouse) */}
+          <div className="h-9 inline-flex items-center p-1 rounded-xl bg-slate-100 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 text-xs font-medium shrink-0">
+            <button
+              onClick={() => setPortalFilter('all')}
+              className={`h-7 px-2.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                portalFilter === 'all'
+                  ? 'bg-white dark:bg-indigo-600 text-slate-900 dark:text-white font-semibold shadow-2xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              All Portals
+            </button>
+            <button
+              onClick={() => setPortalFilter('naukri')}
+              className={`h-7 px-2.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                portalFilter === 'naukri'
+                  ? 'bg-white dark:bg-blue-600 text-slate-900 dark:text-white font-semibold shadow-2xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Naukri ({naukriCount})
+            </button>
+            <button
+              onClick={() => setPortalFilter('linkedin')}
+              className={`h-7 px-2.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                portalFilter === 'linkedin'
+                  ? 'bg-white dark:bg-indigo-600 text-slate-900 dark:text-white font-semibold shadow-2xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              LinkedIn ({linkedinCount})
+            </button>
+            <button
+              onClick={() => setPortalFilter('greenhouse')}
+              className={`h-7 px-2.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                portalFilter === 'greenhouse'
+                  ? 'bg-white dark:bg-emerald-600 text-slate-900 dark:text-white font-semibold shadow-2xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              Greenhouse ({greenhouseCount})
+            </button>
           </div>
 
           {/* Region Filter (All | India | Canada) */}

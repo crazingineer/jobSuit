@@ -1,3 +1,4 @@
+import { GoogleGenAI } from '@google/genai';
 import { db } from '../db';
 import { CAREER_OPS_SYSTEM_PROMPT } from './prompts';
 import { EvaluationReport } from '../../src/types/evaluation';
@@ -10,30 +11,21 @@ import {
 export interface LlmConfig {
   provider: 'gemini' | 'ollama';
   model: string;
-  apiKey?: string;
   ollamaHost?: string;
 }
 
 export class CareerOpsEvaluator {
   /**
-   * Loads LLM provider settings from SQLite system_settings or environment variables.
+   * Loads LLM provider settings from SQLite system_settings and server-side environment variables.
+   * API keys are strictly read from server-side process.env.GEMINI_API_KEY and never stored in SQLite.
    */
   public getLlmConfig(): LlmConfig {
     const settingsRow = db.prepare('SELECT * FROM system_settings WHERE id = 1').get() as any;
 
-    const geminiKey =
-      process.env.GEMINI_API_KEY ||
-      process.env.GOOGLE_API_KEY ||
-      (settingsRow?.llm_provider === 'gemini' ? settingsRow?.llm_api_key_encrypted : undefined);
-
-    if (geminiKey) {
+    if (process.env.GEMINI_API_KEY && settingsRow?.llm_provider !== 'ollama') {
       return {
         provider: 'gemini',
-        model:
-          settingsRow?.llm_provider === 'gemini' && settingsRow?.llm_model
-            ? settingsRow.llm_model
-            : 'gemini-1.5-flash',
-        apiKey: geminiKey
+        model: 'gemini-3.8-flash'
       };
     }
 
@@ -412,28 +404,26 @@ Evaluate this job using the career-ops methodology (Step 0 + Blocks A through H)
     userPrompt: string
   ): Promise<string> {
     if (config.provider === 'gemini') {
-      if (!config.apiKey) {
-        throw new Error('Gemini API key not configured');
+      if (!process.env.GEMINI_API_KEY) {
+        throw new Error('Server-side GEMINI_API_KEY environment variable is not set');
       }
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-          generationConfig: {
-            temperature: 0.15,
-            responseMimeType: 'application/json'
+      const ai = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build'
           }
-        })
+        }
       });
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Gemini API Error (${res.status}): ${errText}`);
-      }
-      const data = await res.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: userPrompt,
+        config: {
+          systemInstruction: systemPrompt,
+          responseMimeType: 'application/json'
+        }
+      });
+      return response.text || '{}';
     }
 
     const host = config.ollamaHost || 'http://127.0.0.1:11434';

@@ -88,9 +88,10 @@ describe("Jake's Resume Generator & Dual India/Canada Active Job URL Verificatio
     assert.ok(boldHtml.includes('<strong>15+ TB</strong>'));
   });
 
-  it('ensures all 13 INITIAL_JOBS (3 Direct Greenhouse + 6 India LinkedIn + 4 Canada LinkedIn) use verified active URLs and truthful easyApply flags', () => {
+  it('ensures all 16 INITIAL_JOBS (3 Direct Greenhouse + 3 Naukri + 6 India LinkedIn + 4 Canada LinkedIn) use verified active URLs and truthful easyApply flags', () => {
     const deadJobIds = ['408899104', '408819201', 'nk-998811', 'wd-zs-334', 'hc-atlassian-882', 'nk-441100'];
     const verifiedGreenhouseIds = ['8907990002', '8585164002', '8132163'];
+    const verifiedNaukriIds = ['nk-57055618', 'nk-44775592', 'nk-38642109'];
     const verifiedLinkedInOffsiteIds = [
       '4487744718', // Toro
       '4487641538', // Persistent Systems
@@ -106,7 +107,18 @@ describe("Jake's Resume Generator & Dual India/Canada Active Job URL Verificatio
       '4485864694'  // Apptoza Inc.
     ];
 
-    assert.equal(INITIAL_JOBS.length, 13);
+    assert.equal(INITIAL_JOBS.length, 16);
+    const naukriJobs = INITIAL_JOBS.filter((j) => j.portal === 'naukri');
+    assert.equal(naukriJobs.length, 3);
+
+    const anthesisJob = INITIAL_JOBS.find((j) => j.id === 'job-106');
+    assert.ok(anthesisJob, 'Anthesis Group job-106 must exist');
+    assert.equal(
+      anthesisJob.externalApplyUrl,
+      'https://anthesisgroup.pinpointhq.com/en/postings/2c996cbe-451b-451c-82b6-d7bc248ba6e6',
+      'Anthesis Group job-106 must point to exact Pinpoint HQ requisition URL, not marketing /careers/'
+    );
+
     for (const job of INITIAL_JOBS) {
       const pid = job.portalJobId || '';
       assert.ok(
@@ -122,6 +134,15 @@ describe("Jake's Resume Generator & Dual India/Canada Active Job URL Verificatio
         assert.ok(
           job.url.startsWith('https://job-boards.greenhouse.io/'),
           `Greenhouse job ${pid} must point to job-boards.greenhouse.io`
+        );
+      } else if (job.portal === 'naukri') {
+        assert.ok(
+          verifiedNaukriIds.includes(pid),
+          `Naukri job ID ${pid} must be in verified Naukri jobs list`
+        );
+        assert.ok(
+          job.url.startsWith('https://www.naukri.com/job-listings-'),
+          `Naukri job ${pid} must point to naukri.com/job-listings-*`
         );
       } else if (job.portal === 'linkedin') {
         assert.equal(job.url, `https://www.linkedin.com/jobs/view/${pid}`);

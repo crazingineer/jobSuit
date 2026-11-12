@@ -19,7 +19,7 @@ async function bootstrap() {
   } else {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true, host: '0.0.0.0' },
+      server: { middlewareMode: true, host: '0.0.0.0', hmr: false },
       appType: 'spa',
     });
     app.use(vite.middlewares);

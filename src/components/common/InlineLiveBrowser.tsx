@@ -315,8 +315,18 @@ export const InlineLiveBrowser: React.FC<InlineLiveBrowserProps> = ({
           </div>
         </form>
 
-        {/* Live Scroll & Field Sync Controls */}
+        {/* Live Scroll, AI Vision Step & Field Sync Controls */}
         <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => sendBrowserInteraction({ type: 'ai_vision_step' })}
+            disabled={isInteracting}
+            className="h-7 px-2.5 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer shrink-0 shadow-2xs"
+            title="Capture screen-grab and run AI Vision click & auto-fill pass on the visible page"
+          >
+            <MousePointerClick className="w-3 h-3" />
+            <span>AI Vision Step</span>
+          </button>
           <button
             type="button"
             onClick={() => sendBrowserInteraction({ type: 'wheel', deltaY: -280 })}

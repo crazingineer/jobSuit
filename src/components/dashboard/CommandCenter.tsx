@@ -49,6 +49,7 @@ interface InlineBrowserTask {
 export const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate }) => {
   const [jobs, setJobs] = useState<JobListing[]>(INITIAL_JOBS);
   const [regionFilter, setRegionFilter] = useState<'ALL' | 'IN' | 'CA'>('ALL');
+  const [portalFilter, setPortalFilter] = useState<'ALL' | 'naukri' | 'linkedin' | 'greenhouse'>('ALL');
   const [tableSearch, setTableSearch] = useState<string>('');
   const [selectedJob, setSelectedJob] = useState<JobListing | null>(null);
   const [isTriggeringBooster, setIsTriggeringBooster] = useState(false);
@@ -107,17 +108,21 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate }) => {
 
   const indiaJobs = jobs.filter((j) => !isCanadianTargetLocation(j.location));
   const canadaJobs = jobs.filter((j) => isCanadianTargetLocation(j.location));
+  const naukriJobsCount = jobs.filter((j) => j.portal === 'naukri').length;
+  const linkedinJobsCount = jobs.filter((j) => j.portal === 'linkedin').length;
+  const greenhouseJobsCount = jobs.filter((j) => j.portal === 'greenhouse').length;
 
   const filteredJobs = jobs.filter((j) => {
     const isCa = isCanadianTargetLocation(j.location);
     const matchesRegion =
       regionFilter === 'ALL' || (regionFilter === 'CA' && isCa) || (regionFilter === 'IN' && !isCa);
+    const matchesPortal = portalFilter === 'ALL' || j.portal === portalFilter;
     const matchesQuery =
       !tableSearch.trim() ||
       j.title.toLowerCase().includes(tableSearch.toLowerCase()) ||
       j.company.toLowerCase().includes(tableSearch.toLowerCase()) ||
       j.location.toLowerCase().includes(tableSearch.toLowerCase());
-    return matchesRegion && matchesQuery;
+    return matchesRegion && matchesPortal && matchesQuery;
   });
 
   // 1. Trigger Naukri 9 AM Booster in the Inline Real Chromium Browser Window
@@ -663,6 +668,50 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate }) => {
                 aria-label="Search active requisitions"
                 className="h-9 w-48 pl-8 pr-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
               />
+            </div>
+
+            {/* Portal Segmented Filter (All | Naukri | LinkedIn | Greenhouse) */}
+            <div className="h-9 inline-flex items-center rounded-xl bg-slate-100 dark:bg-slate-800/90 p-1 border border-slate-200 dark:border-slate-700 text-xs font-medium shrink-0">
+              <button
+                onClick={() => setPortalFilter('ALL')}
+                className={`h-7 px-2.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                  portalFilter === 'ALL'
+                    ? 'bg-white dark:bg-indigo-600 text-slate-900 dark:text-white font-semibold shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                All Portals
+              </button>
+              <button
+                onClick={() => setPortalFilter('naukri')}
+                className={`h-7 px-2.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                  portalFilter === 'naukri'
+                    ? 'bg-white dark:bg-blue-600 text-slate-900 dark:text-white font-semibold shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Naukri ({naukriJobsCount})
+              </button>
+              <button
+                onClick={() => setPortalFilter('linkedin')}
+                className={`h-7 px-2.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                  portalFilter === 'linkedin'
+                    ? 'bg-white dark:bg-indigo-600 text-slate-900 dark:text-white font-semibold shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                LinkedIn ({linkedinJobsCount})
+              </button>
+              <button
+                onClick={() => setPortalFilter('greenhouse')}
+                className={`h-7 px-2.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                  portalFilter === 'greenhouse'
+                    ? 'bg-white dark:bg-emerald-600 text-slate-900 dark:text-white font-semibold shadow-2xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Greenhouse ({greenhouseJobsCount})
+              </button>
             </div>
 
             {/* Market Segmented Filter */}
